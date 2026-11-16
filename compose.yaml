@@ -1,0 +1,51 @@
+name: cu-chi
+services:
+  app:
+    image: ghcr.io/netherquartz/cu-chi:${CUCHI_IMAGE_TAG:-main}
+    restart: unless-stopped
+    ports:
+      - "${CUCHI_BIND_ADDRESS:-127.0.0.1}:${CUCHI_PORT:-8080}:8080"
+    environment:
+      CUCHI_LISTEN: 0.0.0.0:8080
+      CUCHI_PUBLIC_URL: ${CUCHI_PUBLIC_URL:?Set CUCHI_PUBLIC_URL}
+      CUCHI_DATABASE_URL: postgres://cuchi:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/cuchi?sslmode=disable
+      CUCHI_MASTER_KEY: ${CUCHI_MASTER_KEY:?Set CUCHI_MASTER_KEY}
+      CUCHI_OIDC_ISSUER: ${CUCHI_OIDC_ISSUER:?Set CUCHI_OIDC_ISSUER}
+      CUCHI_OIDC_CLIENT_ID: ${CUCHI_OIDC_CLIENT_ID:?Set CUCHI_OIDC_CLIENT_ID}
+      CUCHI_OIDC_CLIENT_SECRET: ${CUCHI_OIDC_CLIENT_SECRET:?Set CUCHI_OIDC_CLIENT_SECRET}
+      CUCHI_ADMIN_GROUP: ${CUCHI_ADMIN_GROUP:-administrators}
+      CUCHI_USER_GROUP: ${CUCHI_USER_GROUP:-vpn-users}
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, /cuchi, healthcheck]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cuchi
+      POSTGRES_DB: cuchi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U cuchi -d cuchi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+volumes:
+  database:

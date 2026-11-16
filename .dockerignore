@@ -1,0 +1,12 @@
+.git
+.github
+.env
+.env.*
+*.pem
+*.key
+*.conf
+work
+bin
+dist
+coverage.out
+*.log

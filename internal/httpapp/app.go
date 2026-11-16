@@ -1,0 +1,292 @@
+package httpapp
+
+import (
+	"context"
+	"crypto/subtle"
+	"embed"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"io"
+	"io/fs"
+	"log/slog"
+	"net"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/oauth2"
+
+	"github.com/NetherQuartz/cu-chi/internal/config"
+	"github.com/NetherQuartz/cu-chi/internal/cryptobox"
+	"github.com/NetherQuartz/cu-chi/internal/store"
+)
+
+//go:embed web/*
+var web embed.FS
+
+type App struct {
+	cfg      config.Config
+	db       *store.Store
+	box      *cryptobox.Box
+	oauth    *oauth2.Config
+	verifier *oidc.IDTokenVerifier
+	client   *http.Client
+}
+type authenticated func(http.ResponseWriter, *http.Request, store.Session)
+
+func New(ctx context.Context, cfg config.Config, db *store.Store) (*App, error) {
+	box, err := cryptobox.New(cfg.MasterKey)
+	if err != nil {
+		return nil, err
+	}
+	a := &App{cfg: cfg, db: db, box: box, client: &http.Client{Timeout: 15 * time.Second}}
+	if !cfg.DevAuth {
+		provider, err := oidc.NewProvider(oidc.ClientContext(ctx, a.client), cfg.Issuer)
+		if err != nil {
+			return nil, errors.New("OIDC discovery failed; check issuer, TLS and network access")
+		}
+		a.oauth = &oauth2.Config{ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, Endpoint: provider.Endpoint(), RedirectURL: cfg.PublicURL + "/auth/callback", Scopes: []string{oidc.ScopeOpenID, "groups"}}
+		a.verifier = provider.Verifier(&oidc.Config{ClientID: cfg.ClientID})
+	}
+	return a, nil
+}
+func (a *App) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { jsonResponse(w, 200, map[string]string{"status": "ok"}) })
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := a.db.Pool.Ping(ctx); err != nil {
+			apiError(w, 503, "База данных недоступна")
+			return
+		}
+		jsonResponse(w, 200, map[string]string{"status": "ready"})
+	})
+	mux.HandleFunc("GET /api/public", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, 200, map[string]any{"dev_auth": a.cfg.DevAuth})
+	})
+	mux.HandleFunc("GET /auth/login", a.login)
+	mux.HandleFunc("GET /auth/callback", a.callback)
+	if a.cfg.DevAuth {
+		mux.HandleFunc("POST /auth/dev", a.devLogin)
+	}
+	mux.HandleFunc("GET /api/me", a.auth(false, func(w http.ResponseWriter, r *http.Request, s store.Session) {
+		jsonResponse(w, 200, map[string]any{"user": s.User, "csrf_token": s.CSRF, "expires_at": s.Expires, "dev_auth": a.cfg.DevAuth})
+	}))
+	mux.HandleFunc("POST /api/logout", a.auth(false, func(w http.ResponseWriter, r *http.Request, s store.Session) {
+		c, _ := r.Cookie("cuchi_session")
+		if err := a.db.DeleteSession(r.Context(), cryptobox.Hash(c.Value)); err != nil {
+			a.failure(w, err)
+			return
+		}
+		a.cookie(w, "cuchi_session", "", -1)
+		w.WriteHeader(204)
+	}))
+	mux.HandleFunc("GET /api/devices", a.auth(false, func(w http.ResponseWriter, r *http.Request, s store.Session) {
+		v, err := a.db.Devices(r.Context(), s.User.ID, s.User.Role == "admin")
+		if err != nil {
+			a.failure(w, err)
+			return
+		}
+		jsonResponse(w, 200, v)
+	}))
+	mux.HandleFunc("POST /api/devices", a.auth(false, a.createDevice))
+	mux.HandleFunc("DELETE /api/devices/{id}", a.auth(false, a.deleteDevice))
+	mux.HandleFunc("GET /api/admin/servers", a.auth(true, func(w http.ResponseWriter, r *http.Request, s store.Session) {
+		v, err := a.db.Servers(r.Context())
+		if err != nil {
+			a.failure(w, err)
+			return
+		}
+		jsonResponse(w, 200, v)
+	}))
+	mux.HandleFunc("POST /api/admin/servers", a.auth(true, a.createServer))
+	mux.HandleFunc("GET /api/admin/events", a.auth(true, func(w http.ResponseWriter, r *http.Request, s store.Session) {
+		v, err := a.db.Events(r.Context())
+		if err != nil {
+			a.failure(w, err)
+			return
+		}
+		jsonResponse(w, 200, v)
+	}))
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { apiError(w, 404, "Не найдено") })
+	assets, _ := fs.Sub(web, "web")
+	for _, path := range []string{"/{$}", "/app.js", "/app.css", "/icon.svg"} {
+		mux.Handle("GET "+path, http.FileServerFS(assets))
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		w.Header().Set("Cache-Control", "no-store")
+		if !a.cfg.DevAuth {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+func (a *App) auth(admin bool, next authenticated) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie("cuchi_session")
+		if err != nil || len(c.Value) != 43 {
+			apiError(w, 401, "Войдите в аккаунт")
+			return
+		}
+		s, err := a.db.Session(r.Context(), cryptobox.Hash(c.Value))
+		if errors.Is(err, pgx.ErrNoRows) {
+			apiError(w, 401, "Сессия завершена. Войдите снова")
+			return
+		}
+		if err != nil {
+			a.failure(w, err)
+			return
+		}
+		if admin && s.User.Role != "admin" {
+			apiError(w, 403, "Нужны права администратора")
+			return
+		}
+		if r.Method != "GET" && r.Method != "HEAD" {
+			if r.Header.Get("Origin") != a.cfg.PublicURL || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(s.CSRF)) != 1 {
+				apiError(w, 403, "Запрос не прошёл проверку безопасности. Обновите страницу")
+				return
+			}
+		}
+		next(w, r, s)
+	}
+}
+func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" {
+		apiError(w, 415, "Ожидается application/json")
+		return false
+	}
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+	d.DisallowUnknownFields()
+	if err := d.Decode(v); err != nil {
+		apiError(w, 400, "Некорректный запрос")
+		return false
+	}
+	if err := d.Decode(new(any)); err != io.EOF {
+		apiError(w, 400, "Некорректный запрос")
+		return false
+	}
+	return true
+}
+func (a *App) createDevice(w http.ResponseWriter, r *http.Request, s store.Session) {
+	var v struct {
+		Name     string `json:"name"`
+		Platform string `json:"platform"`
+	}
+	if !decode(w, r, &v) {
+		return
+	}
+	v.Name = strings.TrimSpace(v.Name)
+	if !validName(v.Name) {
+		apiError(w, 400, "Название должно содержать от 1 до 80 символов")
+		return
+	}
+	switch v.Platform {
+	case "ios", "android", "windows", "macos":
+	case "gateway":
+		if s.User.Role != "admin" {
+			apiError(w, 403, "Шлюзы добавляет администратор")
+			return
+		}
+	default:
+		apiError(w, 400, "Выберите платформу")
+		return
+	}
+	d, err := a.db.CreateDevice(r.Context(), s.User, v.Name, v.Platform)
+	if err != nil {
+		a.failure(w, err)
+		return
+	}
+	jsonResponse(w, 201, d)
+}
+
+var uuidRE = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func (a *App) deleteDevice(w http.ResponseWriter, r *http.Request, s store.Session) {
+	id := r.PathValue("id")
+	if !uuidRE.MatchString(id) {
+		apiError(w, 404, "Устройство не найдено")
+		return
+	}
+	err := a.db.DeleteDevice(r.Context(), s.User, id)
+	if errors.Is(err, store.ErrNotFound) {
+		apiError(w, 404, "Устройство не найдено")
+		return
+	}
+	if err != nil {
+		a.failure(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+var userRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$`)
+var hostnameRE = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0-9])?$`)
+
+func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Session) {
+	var input struct {
+		Name        string `json:"name"`
+		Hostname    string `json:"hostname"`
+		SSHPort     int    `json:"ssh_port"`
+		SSHUser     string `json:"ssh_user"`
+		Fingerprint string `json:"host_key_fingerprint"`
+		PrivateKey  string `json:"private_key"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	input.Hostname = strings.TrimSpace(input.Hostname)
+	if !validName(input.Name) || input.SSHPort < 1 || input.SSHPort > 65535 || !userRE.MatchString(input.SSHUser) || (net.ParseIP(input.Hostname) == nil && !hostnameRE.MatchString(input.Hostname)) {
+		apiError(w, 400, "Проверьте название, адрес и параметры SSH")
+		return
+	}
+	fingerprint, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(input.Fingerprint, "SHA256:"))
+	if err != nil || len(fingerprint) != 32 || !strings.HasPrefix(input.Fingerprint, "SHA256:") {
+		apiError(w, 400, "Нужен отпечаток ключа хоста в формате SHA256:…")
+		return
+	}
+	if _, err = ssh.ParsePrivateKey([]byte(input.PrivateKey)); err != nil {
+		apiError(w, 400, "Нужен корректный приватный SSH-ключ без passphrase; в базе он будет зашифрован")
+		return
+	}
+	v := store.Server{ID: cryptobox.ID(), Name: input.Name, Hostname: input.Hostname, SSHPort: input.SSHPort, SSHUser: input.SSHUser, Fingerprint: input.Fingerprint}
+	v, err = a.db.CreateServer(r.Context(), s.User, v, a.box.Seal([]byte(input.PrivateKey), "server:"+v.ID))
+	input.PrivateKey = ""
+	if err != nil {
+		a.failure(w, err)
+		return
+	}
+	jsonResponse(w, 201, v)
+}
+func validName(s string) bool {
+	return utf8.ValidString(s) && utf8.RuneCountInString(s) > 0 && utf8.RuneCountInString(s) <= 80 && !strings.ContainsAny(s, "\x00\r\n")
+}
+func (a *App) failure(w http.ResponseWriter, err error) {
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && pg.Code == "23505" {
+		apiError(w, 409, "Такая запись уже существует")
+		return
+	}
+	slog.Error("database operation failed")
+	apiError(w, 500, "Не удалось сохранить или получить данные. Попробуйте ещё раз")
+}
+func jsonResponse(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+func apiError(w http.ResponseWriter, status int, message string) {
+	jsonResponse(w, status, map[string]string{"error": message})
+}
