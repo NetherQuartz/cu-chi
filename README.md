@@ -23,7 +23,7 @@ Prerequisites: Docker Compose / Container Manager, reachable PostgreSQL containe
 3. Generate the database password with `openssl rand -hex 32` and the encryption key with `openssl rand -base64 32`. Keep the encryption key stable and back it up separately from database dumps.
 4. Register an OIDC application in Synology with the exact redirect URI `https://<portal-domain>/auth/callback`. Copy the issuer from its discovery document and fill the client ID/secret into `.env`.
 5. Check the actual group claim values. The defaults are `administrators` and `vpn-users`; no group means no access. Register the users in Synology, not in this portal.
-6. Configure an HTTPS reverse proxy to `127.0.0.1:8080`. Compose binds locally by default. If the proxy is on another host, deliberately change `CUCHI_BIND_ADDRESS` and firewall access.
+6. For a proxy running directly on the NAS host, forward to `127.0.0.1:8080`. Compose binds locally by default. A proxy inside a container has its own loopback address: use the container-proxy installation below. If the proxy is on another host, deliberately change `CUCHI_BIND_ADDRESS` and firewall access.
 7. Select a successful published `sha-<full-commit>` tag in `CUCHI_IMAGE_TAG` and run:
 
 ```sh
@@ -35,6 +35,16 @@ docker compose ps
 The published image is anonymously accessible from GHCR; no GitHub login or token is needed to pull it. This was checked using an empty Docker configuration.
 
 The app validates OIDC discovery at startup and fails closed if configuration or certificates are invalid. It runs as a non-root user with a read-only filesystem. It does not need privileged mode, the Docker socket or VPN capabilities on the NAS.
+
+### Nginx Proxy Manager in Docker
+
+Use `compose.npm.yaml` as a **standalone replacement** for `compose.yaml`, not an override. In Synology Container Manager, save it as `compose.yaml` in the new project directory alongside the private `.env` file.
+
+Set `CUCHI_PROXY_NETWORK` to the existing Docker network containing NPM (find it in Container Manager → Network). The application joins that network with the alias `cuchi`; PostgreSQL stays on the separate project network. This variant publishes no NAS host ports. Use a unique alias if deploying multiple instances.
+
+In NPM create an HTTPS proxy host for the portal, forwarding to `http://cuchi:8080`, with a valid certificate and Force SSL enabled. Leave asset caching disabled. Do not add NPM Basic Auth in front of the OIDC callback. Configure Synology SSO with its own public HTTPS hostname and the exact portal callback `/auth/callback`; read the issuer from the discovery document, not from a guessed URL.
+
+Keep the project directory and `.env` accessible only to NAS administrators. The encryption key must survive updates and have a separate private backup. When using the original filename from this repository, add `-f compose.npm.yaml` to every Compose command.
 
 ### Updating and rollback
 

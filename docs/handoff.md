@@ -46,3 +46,9 @@ No SSH connection, AmneziaWG deployment, key/profile generation, main-server mig
 Read AGENTS.md, architecture and roadmap. Next functional slice is durable jobs + strict SSH preflight + one supported AmneziaWG 3.1+ deployment. Keep current security/ownership guarantees. Do not extend inventory deletion to deployed peers until revocation is implemented.
 
 For actual NAS installation, the owner will need to configure the portal HTTPS URL, Synology discovery issuer/client settings and verified group names in a private `.env`. Do not ask them to paste secrets into an issue or commit.
+
+## NAS integration in progress
+
+- Browser access to DSM/NPM is working. Synology SSO Server is installed, and OIDC has been enabled behind a dedicated HTTPS proxy. Discovery advertises RS256, S256 PKCE and the groups scope. A portal client with an exact callback has been registered. End-to-end login and container startup remain unverified.
+- Added standalone `compose.npm.yaml` for a containerized proxy: application joins the existing proxy network under alias `cuchi`, database stays on the project network, no host ports are published. Do not merge it with the host-proxy Compose file.
+- Infrastructure addresses and all credentials stay outside this public repository. Never commit deployment screenshots or filled environment files.
