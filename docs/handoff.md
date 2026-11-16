@@ -21,7 +21,7 @@ GitHub Actions is configured to test with PostgreSQL and publish amd64/arm64 GHC
 
 ## Not implemented / do not imply otherwise
 
-No SSH connection, AmneziaWG deployment, key/profile generation, main-server migration, notifications, gateway, WARP or VLESS yet. Registered devices have no VPN profiles, and registered VPSs are not deployed. Real Synology and NAS compatibility are unverified.
+No SSH connection, AmneziaWG deployment, key/profile generation, main-server migration, notifications, gateway, WARP or VLESS yet. Registered devices have no VPN profiles, and registered VPSs are not deployed. NAS container startup and Synology administrator login have now passed; ordinary-user login and VPN functionality still need verification.
 
 ## Verification
 
@@ -30,7 +30,7 @@ No SSH connection, AmneziaWG deployment, key/profile generation, main-server mig
 - Production Compose parsed successfully with non-secret placeholder configuration.
 - Browser checks passed: local login, device creation, duplicate rejection, persistence after reload/relogin, audit display and logout. Layouts checked at 390px and 1440px widths.
 - Local preview used only generated test data. `.env.local` is ignored.
-- Real Synology OIDC, NAS execution and real VPS connections are not yet tested.
+- NAS execution and real Synology administrator OIDC login passed on 2026-11-17 (see NAS integration below). Ordinary-user login and real VPS connections are not yet tested.
 - The original workstation Go 1.26.5 failed vulnerability scanning. The project and Dockerfile now require the patched official Go 1.26.11; the system installation is untouched.
 - All tests and vet passed again on Go 1.26.11; `govulncheck v1.9.0` reported no vulnerabilities. The official builder image was verified and pinned by digest.
 - First CI run succeeded: https://github.com/NetherQuartz/cu-chi/actions/runs/43972362121 (application commit `44963354a2e967b17bc3702af2ce7941513cadd5`).
@@ -47,8 +47,12 @@ Read AGENTS.md, architecture and roadmap. Next functional slice is durable jobs 
 
 For actual NAS installation, the owner will need to configure the portal HTTPS URL, Synology discovery issuer/client settings and verified group names in a private `.env`. Do not ask them to paste secrets into an issue or commit.
 
-## NAS integration in progress
+## NAS integration verified (2026-11-17)
 
-- Browser access to DSM/NPM is working. Synology SSO Server is installed, and OIDC has been enabled behind a dedicated HTTPS proxy. Discovery advertises RS256, S256 PKCE and the groups scope. A portal client with an exact callback has been registered. End-to-end login and container startup remain unverified.
+- Browser access to DSM/NPM is working. Synology SSO Server is installed, and OIDC has been enabled behind a dedicated HTTPS proxy. Discovery advertises RS256, S256 PKCE and the groups scope. A portal client with an exact callback has been registered. The published image started successfully in Container Manager with PostgreSQL. HTTPS readiness returns 200 and anonymous `/api/me` returns 401. The owner completed the real browser OIDC flow and the portal correctly displayed the administrator role.
 - Added standalone `compose.npm.yaml` for a containerized proxy: application joins the existing proxy network under alias `cuchi`, database stays on the project network, no host ports are published. Do not merge it with the host-proxy Compose file.
 - Infrastructure addresses and all credentials stay outside this public repository. Never commit deployment screenshots or filled environment files.
+- NAS installation currently pins `sha-15b8991755a724a5feb658cf243a88ff6a7bbc26`; the NPM Compose change does not modify application code. Project configuration is separate from the database volume. The configuration directory ACL was inspected and permits only the owner, the built-in administrator and the administrators group.
+- NPM Compose commit `57bb6ea3be6dd2cf8a80359004af727088b65553` passed formatting, vet, race/integration tests, vulnerability scanning, build and multi-architecture publishing: https://github.com/NetherQuartz/cu-chi/actions/runs/43977943295.
+- The browser extension needs file-URL access for uploads. After the owner enabled it, Compose and private environment files uploaded through File Station and Container Manager used the existing project directory.
+- Created the empty `vpn-users` DSM group without granting NAS folder/application permissions. The owner still needs to select its members; normal-user login is not yet verified.

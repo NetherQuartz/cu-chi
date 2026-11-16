@@ -24,7 +24,7 @@ The current UI is HTML/CSS/JavaScript embedded in the binary. A future frontend 
 - Unsafe authenticated requests require the exact configured Origin and a session CSRF token.
 - Development authentication requires explicit opt-in, an IP loopback listener and an identical loopback HTTP origin. It is never enabled by production Compose.
 
-Actual Synology discovery, claim shape and login on the owner's installation are still to be validated. No credential has been provided or stored in Git.
+Actual Synology discovery and the administrator browser login have been validated on the owner's NAS. The groups claim was accepted and mapped to the administrator role. An ordinary-user login remains to be tested. Deployment credentials stay in private NAS configuration and are never stored in Git.
 
 ## Secrets and audits
 
