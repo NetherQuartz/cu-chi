@@ -32,7 +32,7 @@ docker compose up -d
 docker compose ps
 ```
 
-If the GHCR package is private, authenticate on the NAS with a GitHub token that has `read:packages`. Never put that token into Compose or Git. Package visibility is independent of repository visibility and must be checked after the first publication.
+The published image is anonymously accessible from GHCR; no GitHub login or token is needed to pull it. This was checked using an empty Docker configuration.
 
 The app validates OIDC discovery at startup and fails closed if configuration or certificates are invalid. It runs as a non-root user with a read-only filesystem. It does not need privileged mode, the Docker socket or VPN capabilities on the NAS.
 

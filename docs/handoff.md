@@ -33,7 +33,12 @@ No SSH connection, AmneziaWG deployment, key/profile generation, main-server mig
 - Real Synology OIDC, NAS execution and real VPS connections are not yet tested.
 - The original workstation Go 1.26.5 failed vulnerability scanning. The project and Dockerfile now require the patched official Go 1.26.11; the system installation is untouched.
 - All tests and vet passed again on Go 1.26.11; `govulncheck v1.9.0` reported no vulnerabilities. The official builder image was verified and pinned by digest.
-- First GitHub Actions run / GHCR publication are pending; update after verification.
+- First CI run succeeded: https://github.com/NetherQuartz/cu-chi/actions/runs/43972362121 (application commit `44963354a2e967b17bc3702af2ce7941513cadd5`).
+- CI published `ghcr.io/netherquartz/cu-chi:main` and `sha-44963354a2e967b17bc3702af2ce7941513cadd5` for Linux amd64 and arm64. Index digest: `sha256:20f61626d48727a87746d830ade4c2587b8b63e2df11f9eb57ac65b6e7550651`.
+- Anonymous manifest access passed with an empty Docker configuration. No package token is needed on the NAS.
+- Both published architecture variants started successfully with PostgreSQL and a test-only HTTPS OIDC discovery endpoint. UI returned 200, readiness passed, anonymous `/api/me` returned 401, and `/cuchi healthcheck` succeeded. Containers ran as UID/GID 65532 with read-only filesystems and all capabilities dropped. AMD64 was exercised under Docker Desktop emulation.
+- These container checks do not verify real Synology login or real NAS networking.
+- Temporary preview/smoke processes and containers are stopped after verification. The ignored local configuration and development database volume remain for local development.
 
 ## Resume
 
