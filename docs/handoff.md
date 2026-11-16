@@ -38,6 +38,7 @@ No SSH connection, AmneziaWG deployment, key/profile generation, main-server mig
 - Anonymous manifest access passed with an empty Docker configuration. No package token is needed on the NAS.
 - Both published architecture variants started successfully with PostgreSQL and a test-only HTTPS OIDC discovery endpoint. UI returned 200, readiness passed, anonymous `/api/me` returned 401, and `/cuchi healthcheck` succeeded. Containers ran as UID/GID 65532 with read-only filesystems and all capabilities dropped. AMD64 was exercised under Docker Desktop emulation.
 - These container checks do not verify real Synology login or real NAS networking.
+- CI checkout/setup-go actions were updated to their current v7 releases and pinned by commit after GitHub warned about the older Node 20 runtime; the runner is explicitly Ubuntu 24.04 to avoid implicit OS migrations.
 - Temporary preview/smoke processes and containers are stopped after verification. The ignored local configuration and development database volume remain for local development.
 
 ## Resume
