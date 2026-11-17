@@ -23,13 +23,13 @@ GitHub Actions is configured to test with PostgreSQL and publish amd64/arm64 GHC
 
 Added durable deployment/sync/check jobs, strict pinned SSH, Ubuntu 24.04 amd64 preflight, official-source AWG 3.1 runtime, temporary-peer tunnel/DNS/TLS verification, default server selection and per-device encrypted profile revisions. Users can issue/reissue/download/scan/revoke; deletion waits for confirmed revocation. Offline old-server revocations remain visible. See `docs/vpn-operations.md` for exact behavior and limits.
 
-Application CI now waits for the AWG runtime test/publish job and embeds its immutable digest. The NAS application remains amd64/arm64; the first supported VPS runtime is amd64. This implementation is not yet deployed to the NAS. The current CI run/published digest must be verified after pushing.
+Application CI now waits for the AWG runtime test/publish job and embeds its immutable digest. The NAS application remains amd64/arm64; the first supported VPS runtime is amd64. This implementation and the SSO recovery fix are deployed to the NAS at `sha-f0dc9cd18230327f65bd1ddbefbb3006a278c462`. See the release verification below.
 
 Local verification: vet and PostgreSQL race/integration tests cover ownership, encryption, retry identity, stale attempt completion, concurrent revocation, default-server migration and worker restart recovery. SSH tests exercise a real local handshake, host-key mismatch, context cancellation and shell quoting. Three real Docker TUN runs passed encrypted 64 KiB transfers, NAT through a third container, repeated reconciliation and revoked-peer denial. UI registration/deployment form and 390px mobile layout passed; no real VPS deployment was claimed.
 
 Docker Desktop's external TCP path supplied invalid TCP checksums (observed before and after AWG), causing public HTTPS to fail despite internal tunnel/NAT and public DNS working. Do not silently remove the egress test or treat this as a successful external test. CI enables the public DNS/HTTPS check on Ubuntu Linux; every real VPS deployment also requires it. The production runtime contains no diagnostic packet-capture tooling or Desktop-specific workaround.
 
-A dedicated test VPS is being created by the owner; none has been supplied yet. Real VPS provisioning, external inbound UDP and official iOS/Android/Windows/macOS profile import remain acceptance checks. Ordinary Synology user login is also unverified. No Web Push, WARP, local ordinary-WG gateway, VLESS, automatic retirement or grace-period policy exists yet.
+A dedicated test VPS is being created by the owner; none has been supplied yet. Real VPS provisioning, external inbound UDP and official iOS/Android/Windows/macOS profile import remain acceptance checks. The owner reports an ordinary Synology user successfully entered after navigating back from an intermittent exchange failure; independent verification of that account is still pending. No Web Push, WARP, local ordinary-WG gateway, VLESS, automatic retirement or grace-period policy exists yet.
 
 ## Verification
 
@@ -51,7 +51,7 @@ A dedicated test VPS is being created by the owner; none has been supplied yet. 
 
 ## Resume
 
-Read AGENTS.md, architecture and operations. Finish CI/runtime publication and verify anonymous pulls. Update the NAS to the tested application SHA while preserving `.env`, master key and database volume. Then register the owner's fresh VPS using a trusted host fingerprint and dedicated SSH key, deploy it and validate a real client profile. Do not mark those steps complete based on fake-transport API tests or local containers. Infrastructure credentials belong only in private deployment configuration.
+Read AGENTS.md, architecture and operations. NAS currently runs the tested `f0dc9cd` application. The next acceptance step is registering the owner's fresh VPS with a trusted host fingerprint and dedicated SSH key, deploying it and validating a real client profile. Do not mark those steps complete based on fake-transport API tests or local containers. Then implement `docs/health-notifications.md`; this milestone must distinguish profile currency from runtime updates and server health, with no automatic probes from user networks. Infrastructure credentials belong only in private deployment configuration.
 
 ## NAS integration verified (2026-11-17)
 
@@ -65,6 +65,17 @@ Read AGENTS.md, architecture and operations. Finish CI/runtime publication and v
 
 ## SSO callback recovery
 
-A user reported an intermittent token-exchange error followed by a successful login after navigating back. The original provider error was discarded, so the cause cannot be established retrospectively. Callback errors now render an HTML recovery page with retry/open-portal links and a correlation reference; server logs retain only stage, whitelisted OAuth error category and upstream HTTP status. They never log codes, tokens, callback URLs, provider bodies or error descriptions. Client authentication is selected from discovery instead of probing/retrying an authorization code after an arbitrary error. Existing state, PKCE, nonce, signature and group checks remain required. Automated tests cover rejection, replay, no session creation on failure and redaction. Real NAS verification of this change is pending.
+A user reported an intermittent token-exchange error followed by a successful login after navigating back. The original provider error was discarded, so the cause cannot be established retrospectively. Callback errors now render an HTML recovery page with retry/open-portal links and a correlation reference; server logs retain only stage, whitelisted OAuth error category and upstream HTTP status. They never log codes, tokens, callback URLs, provider bodies or error descriptions. Client authentication is selected from discovery instead of probing/retrying an authorization code after an arbitrary error. Existing state, PKCE, nonce, signature and group checks remain required. Automated tests cover rejection, replay, no session creation on failure and redaction. After update, real administrator login through Synology succeeded; an invalid callback rendered the new recovery page over public HTTPS. The originally reported intermittent failure has not been reproduced.
 
-First VPN CI run `43985412457` passed application tests but failed on Linux fixture ownership before starting the tunnel. Test fixtures now permit read access to the capability-restricted container; production configurations remain root-owned mode 0600. The follow-up CI must pass before deployment.
+First VPN CI run `43985412457` passed application tests but failed on Linux fixture ownership before starting the tunnel. Test fixtures now permit read access to the capability-restricted container; production configurations remain root-owned mode 0600. Follow-up CI passed, including the real public DNS/HTTPS egress test on Ubuntu Linux.
+
+## Release verification and next steps
+
+- Application commit `f0dc9cd18230327f65bd1ddbefbb3006a278c462` passed CI: https://github.com/NetherQuartz/cu-chi/actions/runs/43986269342.
+- Published application index: `sha256:a6ab401215854c343258c40c6975435aa927628499deaed0a6650e015ce73fe3`; amd64 and arm64 verified by registry manifest.
+- Published AWG runtime index: `sha256:6402636adb221e5cb70a9eac4d1df948176d96278834d742d36eac76a50319cb`; embedded in that application build. Both packages passed anonymous manifest access.
+- Linux CI passed real AWG traffic, NAT, public DNS/TLS, identical reapplication and revoked-peer denial. The Desktop-specific external checksum issue was not present on the Ubuntu runner.
+- Local browser tests with a temporary fake-transport fixture passed issuance, ready-state download link, a loaded 512×512 QR and revocation. This fixture was explicitly labelled as simulated and is stopped/removed. No synthetic deployment success was written to production.
+- NAS update used the existing project's `.env`, changing only the image tag. A PostgreSQL custom-format backup was created in the private database volume before migration, verified with `pg_restore --list`, and chmod 600. Project recreation preserved the database volume and master key. The new app started, HTTPS readiness returned 200, the real administrator SSO flow succeeded and invalid callbacks displayed HTML recovery UI.
+- Still awaiting the dedicated Ubuntu 24.04 amd64 test VPS and trusted SSH access. No real VPS has been deployed and no official client import has been tested yet.
+- New owner requirements are recorded in `docs/health-notifications.md`: visible server health/profile currency, critical app-level severity, targeted outage/recovery pushes, detailed administrator incidents and noise filtering. Automatic user-network probes are explicitly outside scope. These notification/monitoring features remain the next milestone, not part of the deployed release.

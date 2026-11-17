@@ -89,6 +89,7 @@ Without `TEST_DATABASE_URL`, PostgreSQL integration tests report a skip. CI alwa
 
 - [Architecture and security decisions](docs/architecture.md)
 - [Roadmap and acceptance criteria](docs/roadmap.md)
+- [Planned health checks and notifications](docs/health-notifications.md)
 - [Agent/session handoff](docs/handoff.md)
 - [Contributor and agent instructions](AGENTS.md)
 

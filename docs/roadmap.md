@@ -23,7 +23,9 @@ Implemented code includes steps 1–8; real VPS/official-client acceptance is st
 
 Acceptance: admin registers a VPS and deploys it; a normal user generates two distinct working device profiles; another user cannot access either; reissue/retry creates no duplicates; withdrawal really removes the server peer.
 
-## Browser reminders
+## Health, profile status and browser reminders
+
+Detailed requirements: [health and notifications](health-notifications.md). Monitor server-side operation only; no automatic user-network probes. Display profile currency separately from runtime updates and peer reconciliation. Critical severity uses ordinary Web Push with high transport urgency, without promising native iOS Critical Alerts.
 
 - Manifest, service worker, VAPID, browser subscription lifecycle.
 - Explicit consent and an iOS Home Screen installation guide.
