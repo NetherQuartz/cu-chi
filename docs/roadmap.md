@@ -3,7 +3,7 @@
 ## Foundation (implemented)
 
 - OIDC and group-based roles.
-- Isolated device inventory, administrator server inventory, encrypted SSH keys.
+- Isolated device inventory, administrator server inventory, encrypted SSH keys/passwords, reusable generated/imported SSH keys.
 - Audit log, migrations, responsive UI, Compose and GitHub CI/GHCR images.
 - Automated authentication, ownership and encryption tests.
 

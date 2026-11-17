@@ -1,10 +1,10 @@
 'use strict';
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { me: null, view: 'devices', devices: [], servers: [], deleting: null, profiles: [], vpn: {}, jobs: [], deploying: null, profileAction: null, loading: false };
+const state = { me: null, view: 'devices', devices: [], servers: [], deleting: null, profiles: [], vpn: {}, jobs: [], sshKeys: [], deploying: null, profileAction: null, loading: false };
 const platforms = { ios: 'iOS / iPadOS', android: 'Android', windows: 'Windows', macos: 'macOS', gateway: 'Домашний шлюз' };
-const actions = { 'profile.issued':'Профиль запрошен', 'profile.revocation_requested':'Запрошен отзыв профилей', 'server.check_queued':'Запрошена проверка SSH', 'server.deploy_queued':'Запрошен деплой', 'server.default_changed':'Основной сервер изменён', 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
-let toastTimer;
+const actions = { 'ssh_key.created':'SSH-ключ сохранён', 'ssh_key.deleted':'SSH-ключ удалён', 'profile.issued':'Профиль запрошен', 'profile.revocation_requested':'Запрошен отзыв профилей', 'server.check_queued':'Запрошена проверка SSH', 'server.deploy_queued':'Запрошен деплой', 'server.default_changed':'Основной сервер изменён', 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
+let toastTimer, renderedSSHKeys;
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 function notify(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4000); }
 async function api(path, options = {}) {
@@ -70,12 +70,13 @@ async function loadDevices() {
  }
 }
 async function loadServers() {
- [state.servers,state.jobs] = await Promise.all([api('/api/admin/servers'),api('/api/admin/jobs')]); const container = $('#servers'); container.replaceChildren(); $('#server-empty').hidden = state.servers.length > 0;
+ [state.servers,state.jobs,state.sshKeys] = await Promise.all([api('/api/admin/servers'),api('/api/admin/jobs'),api('/api/admin/ssh-keys')]); renderSSHKeys(); const container = $('#servers'); container.replaceChildren(); $('#server-empty').hidden = state.servers.length > 0;
  for (const server of state.servers) {
   const card=node('article','server-card'); const top=node('div','card-top');
   const names={new:'Не развёрнут',checked:'SSH проверен',deploying:'Разворачивается',ready:'Развёрнут'};
   top.append(node('h3','',server.name),node('span','badge',server.is_default?'Основной сервер':(names[server.vpn_state]||server.vpn_state)));
   card.append(top,node('p','server-address',`${server.ssh_user}@${server.hostname}:${server.ssh_port}`));
+  card.append(node('p','small muted',server.ssh_auth_method==='password'?'Вход по паролю':server.ssh_auth_method==='saved_key'?`SSH-ключ: ${state.sshKeys.find(k=>k.id===server.ssh_key_id)?.name||'Сохранённый'}`:'Отдельный SSH-ключ'));
   if(server.endpoint) card.append(node('p','small muted',`${server.endpoint}:${server.vpn_port}/udp · AmneziaWG 3.1`));
   const job=state.jobs.find(j=>j.server_id===server.id);
   const busy=state.jobs.some(j=>j.server_id===server.id&&['queued','running'].includes(j.status));
@@ -117,14 +118,14 @@ function bindForm(name, handler) {
  });
 }
 $$('[data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
-$$('dialog').forEach(dialog => dialog.addEventListener('close', () => { if (dialog.id === 'server-dialog') $('textarea', dialog).value = ''; }));
+$$('dialog').forEach(dialog => dialog.addEventListener('close', () => { $$('textarea, input[type="password"]', dialog).forEach(el => { el.value = ''; }); }));
 $$('[data-view]').forEach(button => button.addEventListener('click', () => changeView(button.dataset.view)));
 $('#add').addEventListener('click', () => openDialog(state.view === 'devices' ? 'device' : 'server'));
 $('#empty-add-device').addEventListener('click', () => openDialog('device')); $('#empty-add-server').addEventListener('click', () => openDialog('server'));
 $('#logout').addEventListener('click', async () => { try { await api('/api/logout', { method: 'POST' }); state.me = null; location.reload(); } catch (error) { notify(error.message); } });
 $('#dev-login').addEventListener('click', async event => { event.currentTarget.disabled = true; try { await api('/auth/dev', { method: 'POST' }); await start(); } catch (error) { $('#login-error').textContent = error.message; } finally { $('#dev-login').disabled = false; } });
 bindForm('device', async form => { await api('/api/devices', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form))) }); $('#device-dialog').close(); form.reset(); await loadDevices(); notify('Устройство добавлено'); });
-bindForm('server', async form => { const data = Object.fromEntries(new FormData(form)); data.ssh_port = Number(data.ssh_port); await api('/api/admin/servers', { method: 'POST', body: JSON.stringify(data) }); $('#server-dialog').close(); form.reset(); await loadServers(); notify('Сервер сохранён'); });
+bindForm('server', async form => { const data = Object.fromEntries(new FormData(form)); data.ssh_port = Number(data.ssh_port); await api('/api/admin/servers', { method: 'POST', body: JSON.stringify(data) }); $('#server-dialog').close(); form.reset(); updateSSHMethod(); await loadServers(); notify('Сервер сохранён'); });
 bindForm('delete', async () => { await api(`/api/devices/${state.deleting}`, { method: 'DELETE' }); $('#delete-dialog').close(); state.deleting = null; await loadDevices(); notify('Устройство удалено'); });
 function confirmProfile(device,action){
  state.profileAction={device,action}; $('#profile-title').textContent=action==='issue'?'Выпустить новый профиль?':'Отозвать профили?';
@@ -136,4 +137,27 @@ bindForm('deploy',async form=>{const input=Object.fromEntries(new FormData(form)
 bindForm('profile',async()=>{const {device,action}=state.profileAction;await api(`/api/devices/${device.id}/${action==='issue'?'profiles':'revoke'}`,{method:'POST'});$('#profile-dialog').close();await loadDevices();notify('Задание поставлено в очередь');});
 $('#qr-dialog').addEventListener('close',()=>$('#profile-qr').removeAttribute('src'));
 setInterval(async()=>{if(!state.me||state.loading||document.hidden||$('dialog[open]'))return;state.loading=true;try{if(state.view==='servers')await loadServers();if(state.view==='devices')await loadDevices();}catch(e){$('#page-error').textContent=e.message;$('#page-error').hidden=false;}finally{state.loading=false;}},5000);
+function updateSSHMethod() {
+ const method=$('#server-form').elements.ssh_auth_method.value;
+ $$('[data-ssh-method]').forEach(label=>{const active=label.dataset.sshMethod===method;label.hidden=!active;const field=$('input,textarea,select',label);field.disabled=!active;field.required=active;if(!active&&field.tagName!=='SELECT')field.value='';});
+}
+$('#server-form').elements.ssh_auth_method.addEventListener('change',updateSSHMethod);
+function updateKeyImport(){const label=$('#ssh-key-import');const active=$('#ssh-key-form').elements.mode.value==='import';label.hidden=!active;const field=$('textarea',label);field.disabled=!active;field.required=active;if(!active)field.value='';}
+$('#ssh-key-form').elements.mode.addEventListener('change',updateKeyImport);
+$('#add-ssh-key').addEventListener('click',()=>openDialog('ssh-key'));
+bindForm('ssh-key',async form=>{await api('/api/admin/ssh-keys',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});$('#ssh-key-dialog').close();form.reset();updateKeyImport();await loadServers();notify('Ключ сохранён. Добавьте публичную часть на VPS.');});
+function renderSSHKeys(){
+ const signature=JSON.stringify(state.sshKeys);if(signature===renderedSSHKeys)return;renderedSSHKeys=signature;
+ const select=$('#server-form').elements.ssh_key_id;const selected=select.value;select.replaceChildren();
+ if(!state.sshKeys.length){const option=node('option','','Сначала добавьте SSH-ключ');option.value='';select.append(option);}
+ const list=$('#ssh-keys');list.replaceChildren();
+ for(const key of state.sshKeys){
+  const option=node('option','',key.name);option.value=key.id;select.append(option);
+  const card=node('article','server-card');card.append(node('h3','',key.name),node('p','small muted',`Серверов: ${key.server_count}`));
+  const details=node('details');details.append(node('summary','','Публичный ключ для VPS'),node('code','',key.public_key),node('p','small muted',key.fingerprint));card.append(details);
+  const controls=node('div','card-actions');const copy=node('button','button secondary','Копировать публичный ключ');copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(key.public_key+'\n');notify('Публичный ключ скопирован');}catch{details.open=true;notify('Выделите и скопируйте публичный ключ');}});controls.append(copy);
+  const remove=node('button','button secondary','Удалить ключ');remove.disabled=key.server_count>0;remove.addEventListener('click',async()=>{if(!confirm(`Удалить ключ «${key.name}» из Củ Chi? Его публичная часть на VPS останется.`))return;try{await api(`/api/admin/ssh-keys/${key.id}`,{method:'DELETE'});await loadServers();notify('Ключ удалён');}catch(e){notify(e.message);}});controls.append(remove);card.append(controls);list.append(card);
+ }
+ if(state.sshKeys.some(k=>k.id===selected))select.value=selected;
+}
 start();

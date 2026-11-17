@@ -71,6 +71,7 @@ func New(ctx context.Context, cfg config.Config, db *store.Store) (*App, error) 
 func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	a.vpnRoutes(mux)
+	a.sshKeyRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { jsonResponse(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -258,6 +259,9 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 		SSHUser     string `json:"ssh_user"`
 		Fingerprint string `json:"host_key_fingerprint"`
 		PrivateKey  string `json:"private_key"`
+		Password    string `json:"password"`
+		AuthMethod  string `json:"ssh_auth_method"`
+		SSHKeyID    string `json:"ssh_key_id"`
 	}
 	if !decode(w, r, &input) {
 		return
@@ -273,14 +277,51 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 		apiError(w, 400, "Нужен отпечаток ключа хоста в формате SHA256:…")
 		return
 	}
-	if _, err = ssh.ParsePrivateKey([]byte(input.PrivateKey)); err != nil {
-		apiError(w, 400, "Нужен корректный приватный SSH-ключ без passphrase; в базе он будет зашифрован")
+	if input.AuthMethod == "" {
+		input.AuthMethod = "key"
+	}
+	var secret []byte
+	switch input.AuthMethod {
+	case "key":
+		if input.Password != "" || input.SSHKeyID != "" {
+			apiError(w, 400, "Выберите один способ SSH-доступа")
+			return
+		}
+		if _, err = ssh.ParsePrivateKey([]byte(input.PrivateKey)); err != nil {
+			apiError(w, 400, "Нужен корректный приватный SSH-ключ без passphrase")
+			return
+		}
+		secret = []byte(input.PrivateKey)
+	case "password":
+		if input.PrivateKey != "" || input.SSHKeyID != "" || len(input.Password) == 0 || len(input.Password) > 4096 {
+			apiError(w, 400, "Укажите только пароль SSH (до 4096 байт)")
+			return
+		}
+		secret = []byte(input.Password)
+	case "saved_key":
+		if input.PrivateKey != "" || input.Password != "" || !uuidRE.MatchString(input.SSHKeyID) {
+			apiError(w, 400, "Выберите сохранённый SSH-ключ")
+			return
+		}
+	default:
+		apiError(w, 400, "Неизвестный способ SSH-доступа")
 		return
 	}
-	v := store.Server{ID: cryptobox.ID(), Name: input.Name, Hostname: input.Hostname, SSHPort: input.SSHPort, SSHUser: input.SSHUser, Fingerprint: input.Fingerprint}
-	v, err = a.db.CreateServer(r.Context(), s.User, v, a.box.Seal([]byte(input.PrivateKey), "server:"+v.ID))
+	defer clear(secret)
+	v := store.Server{ID: cryptobox.ID(), Name: input.Name, Hostname: input.Hostname, SSHPort: input.SSHPort, SSHUser: input.SSHUser, Fingerprint: input.Fingerprint, AuthMethod: input.AuthMethod, SSHKeyID: input.SSHKeyID}
+	var encrypted []byte
+	if secret != nil {
+		encrypted = a.box.Seal(secret, "server:"+v.ID)
+	}
+	v, err = a.db.CreateServer(r.Context(), s.User, v, encrypted)
 	input.PrivateKey = ""
+	input.Password = ""
 	if err != nil {
+		var pg *pgconn.PgError
+		if errors.As(err, &pg) && pg.Code == "23503" {
+			apiError(w, 400, "Сохранённый SSH-ключ больше не существует")
+			return
+		}
 		a.failure(w, err)
 		return
 	}

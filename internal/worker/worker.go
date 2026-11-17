@@ -98,11 +98,20 @@ func (w *Worker) lead(ctx context.Context) {
 	}
 }
 func (w *Worker) Execute(ctx context.Context, j store.Job, t store.Target) error {
-	key, err := w.Box.Open(t.EncryptedKey, "server:"+t.ID)
+	namespace := "server:" + t.ID
+	if t.AuthMethod == "saved_key" {
+		namespace = "ssh-key:" + t.SSHKeyID
+	}
+	key, err := w.Box.Open(t.EncryptedKey, namespace)
 	if err != nil {
 		return errors.New("cannot decrypt SSH credentials")
 	}
 	c := deployer.Credentials{Host: t.Hostname, Port: t.SSHPort, User: t.SSHUser, Fingerprint: t.Fingerprint, Key: key}
+	if t.AuthMethod == "password" {
+		c.AuthMethod = "password"
+		c.Password = key
+		c.Key = nil
+	}
 	defer clear(key)
 	if j.Kind == "check" {
 		return w.Remote.Check(ctx, c)

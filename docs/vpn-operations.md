@@ -6,7 +6,15 @@ Use a dedicated Ubuntu 24.04 LTS **amd64** VPS with public IPv4, TUN (`/dev/net/
 
 A small family deployment can start with 1–2 vCPU, 1–2 GB RAM and 10–20 GB disk; actual throughput depends on the VPS. The NAS needs no TUN, Docker socket or VPN privileges.
 
-Create a dedicated SSH key without a passphrase. Get the host fingerprint from a trusted provider console:
+Choose an SSH access method in **Серверы**:
+
+- **Сохранённый ключ**: use **Добавить ключ** to generate Ed25519 or import an existing private key without a passphrase. Copy its public part into the provider's SSH-key selection at VPS creation, or into `~/.ssh/authorized_keys` for the selected VPS account via a trusted console. Select this saved key on each new server. The NAS keeps the encrypted private part and never returns it to the browser. Keys from your workstation/SSH agent are not used automatically.
+- **Отдельный приватный ключ**: the key belongs only to that server record; existing registrations keep working unchanged.
+- **Пароль**: enter the existing SSH account password. Password authentication must already be allowed by the VPS's sshd policy (including root policy when applicable). Củ Chi does not change that policy. Standard SSH password authentication is supported; interactive MFA/keyboard-interactive and password-based sudo are not. A non-root account still needs unrestricted passwordless sudo.
+
+Reusing a key is convenient for replacing VPSs; separate keys remain possible. A saved key cannot be deleted while a server references it. Deleting an unused key only removes the portal record, not public keys on remote hosts. Reassigning/rotating credentials for an existing server is not yet implemented. Retain database and master-key backups because generated private keys are not exported.
+
+Get each server's **host fingerprint** from a trusted provider console (this is different from the public login key):
 
 ```sh
 ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
@@ -48,7 +56,7 @@ QR and configuration files contain private keys. Downloads are authenticated, ow
 
 ## Persistence and recovery
 
-Migration `002_vpn.sql` adds profiles, job state and the main-server preference. Back up PostgreSQL and the unchanged master key before upgrading. Do not roll back to the inventory-only application after profiles are issued: it cannot manage or revoke them. Restore a matched database/application backup deliberately, then reconcile VPS state; restoring a database alone does not undo remote peers.
+Migration `002_vpn.sql` adds profiles, job state and the main-server preference. Migration `003_ssh_access.sql` adds reusable SSH keys and password authentication; old server ciphertext and associated data stay intact. The legacy `encrypted_private_key` column stores an encrypted key or password according to `ssh_auth_method`. Do not downgrade the application after using saved keys/passwords: older workers cannot authenticate those records. Back up PostgreSQL and the unchanged master key before upgrading. Do not roll back to the inventory-only application after profiles are issued: it cannot manage or revoke them. Restore a matched database/application backup deliberately, then reconcile VPS state; restoring a database alone does not undo remote peers.
 
 Keys and addresses are allocated transactionally before SSH. Retries reuse them. The worker holds a database session leadership lock; remote operations are serialized with `flock`, and monotonically increasing generations fence stale writes. Per-attempt tokens reject late completions. A restarted worker recovers unfinished jobs. Snapshot completion cannot turn a concurrently revoked profile back into a downloadable profile.
 

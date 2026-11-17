@@ -29,7 +29,7 @@ Local verification: vet and PostgreSQL race/integration tests cover ownership, e
 
 Docker Desktop's external TCP path supplied invalid TCP checksums (observed before and after AWG), causing public HTTPS to fail despite internal tunnel/NAT and public DNS working. Do not silently remove the egress test or treat this as a successful external test. CI enables the public DNS/HTTPS check on Ubuntu Linux; every real VPS deployment also requires it. The production runtime contains no diagnostic packet-capture tooling or Desktop-specific workaround.
 
-A dedicated test VPS is being created by the owner; none has been supplied yet. Real VPS provisioning, external inbound UDP and official iOS/Android/Windows/macOS profile import remain acceptance checks. The owner reports an ordinary Synology user successfully entered after navigating back from an intermittent exchange failure; independent verification of that account is still pending. No Web Push, WARP, local ordinary-WG gateway, VLESS, automatic retirement or grace-period policy exists yet.
+A dedicated test VPS is being created by the owner; none has been supplied yet. Real VPS provisioning, external inbound UDP and official iOS/Android/Windows/macOS profile import remain acceptance checks. The owner confirmed ordinary-user login after adding the account to the configured user group. The later access-denied screen was resolved by that membership change. No Web Push, WARP, local ordinary-WG gateway, VLESS, automatic retirement or grace-period policy exists yet.
 
 ## Verification
 
@@ -38,7 +38,7 @@ A dedicated test VPS is being created by the owner; none has been supplied yet. 
 - Production Compose parsed successfully with non-secret placeholder configuration.
 - Browser checks passed: local login, device creation, duplicate rejection, persistence after reload/relogin, audit display and logout. Layouts checked at 390px and 1440px widths.
 - Local preview used only generated test data. `.env.local` is ignored.
-- NAS execution and real Synology administrator OIDC login passed on 2026-11-17 (see NAS integration below). Ordinary-user login and real VPS connections are not yet tested.
+- NAS execution and real Synology administrator OIDC login passed on 2026-11-17 (see NAS integration below). Ordinary-user login was subsequently confirmed by the owner; real VPS connections remain untested.
 - The original workstation Go 1.26.5 failed vulnerability scanning. The project and Dockerfile now require the patched official Go 1.26.11; the system installation is untouched.
 - All tests and vet passed again on Go 1.26.11; `govulncheck v1.9.0` reported no vulnerabilities. The official builder image was verified and pinned by digest.
 - First CI run succeeded: https://github.com/NetherQuartz/cu-chi/actions/runs/43972362121 (application commit `44963354a2e967b17bc3702af2ce7941513cadd5`).
@@ -61,7 +61,7 @@ Read AGENTS.md, architecture and operations. NAS currently runs the tested `f0dc
 - NAS installation currently pins `sha-15b8991755a724a5feb658cf243a88ff6a7bbc26`; the NPM Compose change does not modify application code. Project configuration is separate from the database volume. The configuration directory ACL was inspected and permits only the owner, the built-in administrator and the administrators group.
 - NPM Compose commit `57bb6ea3be6dd2cf8a80359004af727088b65553` passed formatting, vet, race/integration tests, vulnerability scanning, build and multi-architecture publishing: https://github.com/NetherQuartz/cu-chi/actions/runs/43977943295.
 - The browser extension needs file-URL access for uploads. After the owner enabled it, Compose and private environment files uploaded through File Station and Container Manager used the existing project directory.
-- Created the empty `vpn-users` DSM group without granting NAS folder/application permissions. The owner still needs to select its members; normal-user login is not yet verified.
+- Created the empty `vpn-users` DSM group without granting NAS folder/application permissions. The owner subsequently added an ordinary user and confirmed successful login.
 
 ## SSO callback recovery
 
@@ -79,3 +79,9 @@ First VPN CI run `43985412457` passed application tests but failed on Linux fixt
 - NAS update used the existing project's `.env`, changing only the image tag. A PostgreSQL custom-format backup was created in the private database volume before migration, verified with `pg_restore --list`, and chmod 600. Project recreation preserved the database volume and master key. The new app started, HTTPS readiness returned 200, the real administrator SSO flow succeeded and invalid callbacks displayed HTML recovery UI.
 - Still awaiting the dedicated Ubuntu 24.04 amd64 test VPS and trusted SSH access. No real VPS has been deployed and no official client import has been tested yet.
 - New owner requirements are recorded in `docs/health-notifications.md`: visible server health/profile currency, critical app-level severity, targeted outage/recovery pushes, detailed administrator incidents and noise filtering. Automatic user-network probes are explicitly outside scope. These notification/monitoring features remain the next milestone, not part of the deployed release.
+
+## SSH access expansion (2026-11-17)
+
+The owner requested password login and a key that can be configured once and reused for new VPSs. Added admin-only saved-key creation (generated Ed25519/import), public-key copying, server key selection and server-specific password/private-key input. Private material is never exported. Saved keys have independent AEAD binding; old server credentials retain their namespace. Deletion is blocked by a database FK while referenced. Password authentication is standard SSH password only, with pinned host verification before authentication. Non-root deployment still needs passwordless sudo; no workstation SSH-agent integration, automatic key installation or credential rotation is implied.
+
+Local vet and PostgreSQL race/integration tests passed, including upgrade from migrations 001–002 with an existing encrypted credential, idempotent migration, shared-key worker resolution, password encryption/whitespace, API authorization/CSRF, deletion constraints and real localhost password SSH. The host-pin test confirms that a rejected host receives no password. Browser checks covered generated public-key display, shared-key registration, password registration at 390px and an existing legacy server record. CI publication and NAS update are pending. The owner has now supplied a private local VPS credential file; its contents and location are deliberately omitted here. Trusted host fingerprint confirmation is pending before authentication.

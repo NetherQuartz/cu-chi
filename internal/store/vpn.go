@@ -277,7 +277,7 @@ func (s *Store) Target(ctx context.Context, id string) (Target, error) {
 	}
 	defer tx.Rollback(ctx)
 	var t Target
-	err = tx.QueryRow(ctx, `SELECT id::text,hostname,ssh_port,ssh_user,host_key_fingerprint,encrypted_private_key,encrypted_vpn_settings,endpoint,vpn_port,desired_generation FROM servers WHERE id=$1`, id).Scan(&t.ID, &t.Hostname, &t.SSHPort, &t.SSHUser, &t.Fingerprint, &t.EncryptedKey, &t.EncryptedSettings, &t.Endpoint, &t.VPNPort, &t.Generation)
+	err = tx.QueryRow(ctx, `SELECT s.id::text,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,COALESCE(k.encrypted_private_key,s.encrypted_private_key),s.encrypted_vpn_settings,s.endpoint,s.vpn_port,s.desired_generation,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,'') FROM servers s LEFT JOIN ssh_keys k ON k.id=s.ssh_key_id WHERE s.id=$1`, id).Scan(&t.ID, &t.Hostname, &t.SSHPort, &t.SSHUser, &t.Fingerprint, &t.EncryptedKey, &t.EncryptedSettings, &t.Endpoint, &t.VPNPort, &t.Generation, &t.AuthMethod, &t.SSHKeyID)
 	if err != nil {
 		return t, err
 	}

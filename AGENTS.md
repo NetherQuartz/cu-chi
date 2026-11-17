@@ -22,7 +22,7 @@ Keep these files current when behavior, constraints or verification results chan
 - Official OIDC and OAuth libraries; validate issuer, audience, signature, expiry, state, nonce and PKCE.
 - Keep roles and ownership enforcement on the backend. Treat missing groups as denied access.
 - Check ownership in SQL. Mutations require an exact Origin and a session CSRF token.
-- SSH private keys use AES-256-GCM, bound to the server record as associated data. Never return keys in list APIs.
+- SSH private keys and passwords use AES-256-GCM, bound to server:<id> or ssh-key:<id> associated data. Never return private keys/passwords in APIs; saved-key APIs expose only public material.
 - Applied SQL migrations are immutable; append new numbered migrations.
 - No arbitrary shell commands from request input. Future SSH deployment must verify pinned host keys.
 - Never show fabricated deployment success, VPN profiles, connectivity, metrics or push delivery.

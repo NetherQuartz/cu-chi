@@ -99,3 +99,63 @@ func TestSSHHandshakeCancellation(t *testing.T) {
 		t.Fatal("handshake did not respect context")
 	}
 }
+
+func TestSSHPasswordAndHostPin(t *testing.T) {
+	_, key, _ := ed25519.GenerateKey(rand.Reader)
+	signer, _ := ssh.NewSignerFromKey(key)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	attempts := make(chan string, 3)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for n := 0; n < 3; n++ {
+			raw, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			raw.SetDeadline(time.Now().Add(5 * time.Second))
+			cfg := &ssh.ServerConfig{PasswordCallback: func(meta ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+				attempts <- string(password)
+				if meta.User() == "root" && string(password) == " test password \n" {
+					return nil, nil
+				}
+				return nil, errors.New("denied")
+			}}
+			cfg.AddHostKey(signer)
+			conn, _, _, err := ssh.NewServerConn(raw, cfg)
+			if err == nil {
+				conn.Close()
+			}
+			raw.Close()
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := Credentials{Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, User: "root", AuthMethod: "password", Password: []byte(" test password \n"), Fingerprint: ssh.FingerprintSHA256(signer.PublicKey())}
+	client, err := dial(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Close()
+	c.Password = []byte("wrong")
+	if _, err = dial(ctx, c); err == nil || strings.Contains(err.Error(), "wrong") {
+		t.Fatal("wrong password accepted or exposed")
+	}
+	c.Fingerprint = "SHA256:wrong"
+	if _, err = dial(ctx, c); !errors.Is(err, ErrHostKey) {
+		t.Fatal("changed host accepted")
+	}
+	<-done
+	close(attempts)
+	var got []string
+	for p := range attempts {
+		got = append(got, p)
+	}
+	if len(got) != 2 || got[0] != " test password \n" || got[1] != "wrong" {
+		t.Fatal("password sent before host verification, or changed")
+	}
+}

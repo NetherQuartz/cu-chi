@@ -32,9 +32,9 @@ var idRE = regexp.MustCompile(`^[a-f0-9-]{36}$`)
 func ValidImage(s string) bool { return imageRE.MatchString(s) }
 
 type Credentials struct {
-	Host, User, Fingerprint string
-	Port                    int
-	Key                     []byte
+	Host, User, Fingerprint, AuthMethod string
+	Port                                int
+	Key, Password                       []byte
 }
 type Payload struct {
 	ServerID, Image          string
@@ -57,9 +57,21 @@ func PinnedHostKey(want string) ssh.HostKeyCallback {
 	}
 }
 func dial(ctx context.Context, c Credentials) (*ssh.Client, error) {
-	signer, err := ssh.ParsePrivateKey(c.Key)
-	if err != nil {
-		return nil, errors.New("SSH private key invalid")
+	var auth ssh.AuthMethod
+	switch c.AuthMethod {
+	case "", "key":
+		signer, err := ssh.ParsePrivateKey(c.Key)
+		if err != nil {
+			return nil, errors.New("SSH private key invalid")
+		}
+		auth = ssh.PublicKeys(signer)
+	case "password":
+		if len(c.Password) == 0 {
+			return nil, errors.New("SSH password missing")
+		}
+		auth = ssh.Password(string(c.Password))
+	default:
+		return nil, errors.New("SSH authentication method invalid")
 	}
 	d := net.Dialer{Timeout: 10 * time.Second}
 	addr := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
@@ -70,7 +82,7 @@ func dial(ctx context.Context, c Credentials) (*ssh.Client, error) {
 	raw.SetDeadline(time.Now().Add(15 * time.Second))
 	stop := context.AfterFunc(ctx, func() { raw.Close() })
 	defer stop()
-	cfg := &ssh.ClientConfig{User: c.User, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: PinnedHostKey(c.Fingerprint)}
+	cfg := &ssh.ClientConfig{User: c.User, Auth: []ssh.AuthMethod{auth}, HostKeyCallback: PinnedHostKey(c.Fingerprint)}
 	conn, chans, reqs, err := ssh.NewClientConn(raw, addr, cfg)
 	if err != nil {
 		raw.Close()

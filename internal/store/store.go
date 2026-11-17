@@ -37,6 +37,8 @@ type Device struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type Server struct {
+	AuthMethod  string    `json:"ssh_auth_method"`
+	SSHKeyID    string    `json:"ssh_key_id,omitempty"`
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
 	Hostname    string    `json:"hostname"`
@@ -222,7 +224,7 @@ func (s *Store) DeleteDevice(ctx context.Context, u User, id string) error {
 	return tx.Commit(ctx)
 }
 func (s *Store) Servers(ctx context.Context) ([]Server, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT s.id::text,s.name,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,s.created_at,s.endpoint,s.vpn_port,s.vpn_state,s.vpn_error,COALESCE(v.default_server_id=s.id,false) FROM servers s CROSS JOIN vpn_preferences v ORDER BY s.created_at DESC")
+	rows, err := s.Pool.Query(ctx, "SELECT s.id::text,s.name,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,s.created_at,s.endpoint,s.vpn_port,s.vpn_state,s.vpn_error,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,''),COALESCE(v.default_server_id=s.id,false) FROM servers s CROSS JOIN vpn_preferences v ORDER BY s.created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +232,7 @@ func (s *Store) Servers(ctx context.Context) ([]Server, error) {
 	out := []Server{}
 	for rows.Next() {
 		var v Server
-		if err := rows.Scan(&v.ID, &v.Name, &v.Hostname, &v.SSHPort, &v.SSHUser, &v.Fingerprint, &v.CreatedAt, &v.Endpoint, &v.VPNPort, &v.VPNState, &v.VPNError, &v.Default); err != nil {
+		if err := rows.Scan(&v.ID, &v.Name, &v.Hostname, &v.SSHPort, &v.SSHUser, &v.Fingerprint, &v.CreatedAt, &v.Endpoint, &v.VPNPort, &v.VPNState, &v.VPNError, &v.AuthMethod, &v.SSHKeyID, &v.Default); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -238,12 +240,15 @@ func (s *Store) Servers(ctx context.Context) ([]Server, error) {
 	return out, rows.Err()
 }
 func (s *Store) CreateServer(ctx context.Context, u User, v Server, encryptedKey []byte) (Server, error) {
+	if v.AuthMethod == "" {
+		v.AuthMethod = "key"
+	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return v, err
 	}
 	defer tx.Rollback(ctx)
-	err = tx.QueryRow(ctx, `INSERT INTO servers(id,name,hostname,ssh_port,ssh_user,host_key_fingerprint,encrypted_private_key,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING created_at`, v.ID, v.Name, v.Hostname, v.SSHPort, v.SSHUser, v.Fingerprint, encryptedKey, u.ID).Scan(&v.CreatedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO servers(id,name,hostname,ssh_port,ssh_user,host_key_fingerprint,encrypted_private_key,created_by,ssh_auth_method,ssh_key_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::uuid) RETURNING created_at`, v.ID, v.Name, v.Hostname, v.SSHPort, v.SSHUser, v.Fingerprint, encryptedKey, u.ID, v.AuthMethod, v.SSHKeyID).Scan(&v.CreatedAt)
 	if err != nil {
 		return v, err
 	}

@@ -26,13 +26,13 @@ The current UI is HTML/CSS/JavaScript embedded in the binary. A future frontend 
 
 Browser login errors use an HTML recovery page and a reference for safe log correlation. Provider error descriptions, token bodies and callback URLs are never logged. Client authentication uses the advertised discovery method without automatic code-redeeming retries.
 
-Actual Synology discovery and the administrator browser login have been validated on the owner's NAS. The groups claim was accepted and mapped to the administrator role. An ordinary-user login remains to be tested. Deployment credentials stay in private NAS configuration and are never stored in Git.
+Actual Synology discovery and the administrator browser login have been validated on the owner's NAS. The groups claim was accepted and mapped to the administrator role. The owner also confirmed ordinary-user login after adding that account to the configured user group. Deployment credentials stay in private NAS configuration and are never stored in Git.
 
 ## Secrets and audits
 
-The 32-byte base64 master key is loaded from environment. SSH private keys are encrypted with AES-256-GCM using a new nonce and server-ID-associated data. Key material is never returned by list APIs, recorded in audit events or emitted to logs. This protects backups at rest, not a compromised running NAS.
+The 32-byte base64 master key is loaded from environment. SSH private keys and passwords are encrypted with AES-256-GCM using a new nonce and server-ID-associated data. Reusable SSH keys have their own `ssh-key:<id>` associated-data namespace and are referenced by servers, rather than copied. Key material is never returned by list APIs, recorded in audit events or emitted to logs. This protects backups at rest, not a compromised running NAS.
 
-Current SSH input accepts a dedicated private key without a passphrase; the database encrypts it at rest. The fingerprint is supplied from a trusted provider console. SSH connections verify this pinned fingerprint before authentication and commands. Do not use `InsecureIgnoreHostKey`.
+SSH input accepts a server-specific private key without a passphrase, a password, or a saved-key reference. Administrators can generate Ed25519 keys or import existing private keys once; only their public portion is returned. Saved keys are immutable and cannot be deleted while referenced by any server. Public keys must be installed on each VPS through its provider or trusted console; this does not automatically enroll VPSs. Password SSH uses the standard SSH password method, without keyboard-interactive/OTP or password-based sudo. Root or unrestricted passwordless sudo remains required. The fingerprint is supplied from a trusted provider console. SSH connections verify this pinned fingerprint before authentication and commands. Do not use `InsecureIgnoreHostKey`.
 
 Audits record actor, action, resource ID and timestamp in the same transaction as the mutation. They do not record request payloads. All responses are `Cache-Control: no-store`; a future PWA service worker must never cache authenticated APIs, profile downloads or secrets.
 
