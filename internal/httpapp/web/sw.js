@@ -5,7 +5,8 @@ self.addEventListener('push',event=>{
  const id=typeof data.id==='string'&&/^[a-f0-9-]{36}$/.test(data.id)?data.id:'notice';
  event.waitUntil(self.registration.showNotification(typeof data.title==='string'?data.title.slice(0,100):'Củ Chi',{
   body:typeof data.body==='string'?data.body.slice(0,400):'Откройте личный кабинет.',
-  icon:'/icon-192.png',badge:'/icon-192.png',tag:'cuchi-'+id,data:{id},
+  // Android masks the badge to its alpha silhouette; an opaque app tile becomes a square.
+  icon:'/icon-192.png',badge:'/badge-96.png',tag:'cuchi-'+id,data:{id},
  }));
 });
 self.addEventListener('notificationclick',event=>{
