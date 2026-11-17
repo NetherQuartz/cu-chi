@@ -22,7 +22,7 @@ See [VPS deployment and profile operations](docs/vpn-operations.md) for prerequi
 
 Prerequisites: Docker Compose / Container Manager, reachable PostgreSQL container, HTTPS reverse proxy and Synology SSO Server configured for OIDC. The portal and SSO must be reachable without a working VPN. Confirm compatibility with the actual Xpenology installation.
 
-1. Download `compose.yaml` and `.env.example` to a dedicated directory on the NAS.
+1. Download `compose.yaml`, `.env.example`, and `deploy/backup/backup.sh` to a dedicated directory on the NAS. Save the script there as `backup.sh` (readable mode 644).
 2. Copy `.env.example` to `.env` and restrict access to it (`chmod 600 .env`).
 3. Generate the database password with `openssl rand -hex 32` and the encryption key with `openssl rand -base64 32`. Keep the encryption key stable and back it up separately from database dumps.
 4. Register an OIDC application in Synology with the exact redirect URI `https://<portal-domain>/auth/callback`. Copy the issuer from its discovery document and fill the client ID/secret into `.env`.
@@ -42,7 +42,7 @@ The app validates OIDC discovery at startup and fails closed if configuration or
 
 ### Nginx Proxy Manager in Docker
 
-Use `compose.npm.yaml` as a **standalone replacement** for `compose.yaml`, not an override. In Synology Container Manager, save it as `compose.yaml` in the new project directory alongside the private `.env` file.
+Use `compose.npm.yaml` as a **standalone replacement** for `compose.yaml`, not an override. In Synology Container Manager, save it as `compose.yaml` in the new project directory alongside the private `.env` and `backup.sh` files.
 
 Set `CUCHI_PROXY_NETWORK` to the existing Docker network containing NPM (find it in Container Manager → Network). The application joins that network with the alias `cuchi`; PostgreSQL stays on the separate project network. This variant publishes no NAS host ports. Use a unique alias if deploying multiple instances.
 
@@ -60,7 +60,7 @@ docker compose pull app
 docker compose up -d app
 ```
 
-Keep the previous tag and a database backup. Migration 002 adds VPN state. After profiles are issued, do not roll back to an inventory-only version: it cannot revoke their peers. See the [recovery notes](docs/vpn-operations.md#persistence-and-recovery). Never use `docker compose down -v` during an ordinary update.
+Keep the previous tag and a database backup. To enable the backup service on an existing installation, also copy `backup.sh`, update Compose and recreate the full project. Migration 002 adds VPN state. After profiles are issued, do not roll back to an inventory-only version: it cannot revoke their peers. See the [recovery notes](docs/vpn-operations.md#persistence-and-recovery). Never use `docker compose down -v` during an ordinary update.
 
 ## Local development
 
@@ -94,3 +94,13 @@ Without `TEST_DATABASE_URL`, PostgreSQL integration tests report a skip. CI alwa
 - [Contributor and agent instructions](AGENTS.md)
 
 No license has been selected yet; do not assume this repository grants reuse rights beyond GitHub's default terms.
+
+## Daily backups on the NAS
+
+Both production Compose files include a backup service using the official PostgreSQL image. It takes an initial snapshot after the app/database are healthy, then every 24 hours while running; failures retry after one hour. The default bind directory is `./backups` beside Compose, separate from the database's Docker volume. `CUCHI_BACKUP_DIR` can select another private NAS directory. Keep it writable by the container's root UID; no extra Linux capabilities are granted.
+
+Each completed bundle contains `database.dump` (custom-format pg_dump), `master-key` and the application `image-tag`. These are sensitive, unencrypted files protected by mode 600 inside mode-700 directories. They allow recovery of encrypted SSH/VPN credentials; keep the backup directory admin-only. Other deployment configuration remains in the private project `.env` and Compose; preserve those files too. This local copy does not protect against losing the NAS/storage itself.
+
+The script checks the archive with `pg_restore --list`, publishes it by atomic directory rename and retains the newest 14 completed bundles. Failed snapshots never remove older successful ones. The backup container becomes unhealthy on failure or if the last success is older than 26 hours; this does not yet send a push notification. For an immediate backup, run `docker compose exec backup sh /usr/local/bin/cuchi-backup --once`. Concurrent manual/scheduled runs are serialized by a file lock. The schedule restarts when the container is recreated.
+
+Restore into an empty PostgreSQL 17 database using `pg_restore --exit-on-error --dbname=<database> database.dump`, restore the saved master key into the private `.env`, and use the corresponding application SHA tag. Test restoration before switching the portal to that database; existing VPS peers must then be reconciled. CI tests actual restoration, private file permissions, failure handling and retention. Do not copy the live PostgreSQL data directory as a logical backup.

@@ -50,6 +50,40 @@ services:
     logging:
       driver: json-file
       options: {max-size: 10m, max-file: "3"}
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    entrypoint: [/bin/sh, /usr/local/bin/cuchi-backup]
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGCONNECT_TIMEOUT: 10
+      PGUSER: cuchi
+      PGDATABASE: cuchi
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      CUCHI_MASTER_KEY: ${CUCHI_MASTER_KEY:?Set CUCHI_MASTER_KEY}
+      CUCHI_IMAGE_TAG: ${CUCHI_IMAGE_TAG:-main}
+    volumes:
+      - ./backup.sh:/usr/local/bin/cuchi-backup:ro
+      - ${CUCHI_BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, /bin/sh, /usr/local/bin/cuchi-backup, --healthcheck]
+      interval: 60s
+      timeout: 5s
+      start_period: 120s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
 volumes:
   database:
 
