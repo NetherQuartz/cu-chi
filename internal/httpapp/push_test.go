@@ -195,4 +195,20 @@ func TestSelfPushTargetsOnlyCurrentBrowser(t *testing.T) {
 	if _, err = a.db.ClaimPush(ctx); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatal("test also sent to another device", err)
 	}
+	if err = a.db.FinishPush(ctx, j, 201, false); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"endpoint":"` + endpoints[0] + `"}`
+	r := request(a, "POST", "/api/push/status", u, payload)
+	requireStatus(t, r, 200)
+	var status store.PushStatus
+	if err = json.Unmarshal(r.Body.Bytes(), &status); err != nil || !status.Registered || status.Status != "accepted" || status.Code != 201 {
+		t.Fatal("test transport status", err)
+	}
+	r = request(a, "POST", "/api/push/status", other, payload)
+	requireStatus(t, r, 200)
+	if err = json.Unmarshal(r.Body.Bytes(), &status); err != nil || status.Registered || status.Status != "" {
+		t.Fatal("cross-user test status leaked", err)
+	}
+
 }
