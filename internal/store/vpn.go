@@ -115,6 +115,9 @@ func (s *Store) SetDefaultServer(ctx context.Context, u User, id string) error {
 	if _, err = tx.Exec(ctx, "UPDATE vpn_preferences SET default_server_id=$1", id); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,server_id) SELECT DISTINCT u.id,'reminder:'||$1::text||':'||to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD'),'reminder','warning',$1::uuid FROM users u JOIN devices d ON d.user_id=u.id JOIN profiles p ON p.device_id=d.id WHERE u.role<>'denied' AND p.desired AND p.server_id<>$1::uuid ON CONFLICT DO NOTHING`, id); err != nil {
+		return err
+	}
 	if err = audit(ctx, tx, u.ID, "server.default_changed", id); err != nil {
 		return err
 	}
@@ -350,6 +353,11 @@ func (s *Store) Finish(ctx context.Context, j Job, t Target, failure string) err
 		_, err = tx.Exec(ctx, "UPDATE jobs SET status=$2,stage=$2,error=$3,finished_at=now(),run_after=now()+interval '30 seconds' WHERE id=$1", j.ID, status, failure)
 		if err != nil {
 			return err
+		}
+		if status == "failed" && !pending {
+			if _, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,server_id) SELECT id,'job:'||$1::text,'job_failed','warning',$2 FROM users WHERE role='admin' ON CONFLICT DO NOTHING`, j.ID, j.ServerID); err != nil {
+				return err
+			}
 		}
 		_, err = tx.Exec(ctx, "UPDATE servers SET vpn_error=$2 WHERE id=$1", j.ServerID, failure)
 	} else {

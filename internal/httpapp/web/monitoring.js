@@ -15,7 +15,7 @@ bindForm('location',async form=>{await api(`/api/admin/servers/${locationServer}
 function bytes(n){if(n==null||!Number.isFinite(n))return '—';const u=['Б','КиБ','МиБ','ГиБ','ТиБ'];let i=0;while(n>=1024&&i<4){n/=1024;i++;}return `${new Intl.NumberFormat('ru-RU',{maximumFractionDigits:i?2:0}).format(n)} ${u[i]}`;}
 function dateLabel(v){return v?new Date(v).toLocaleString('ru-RU'):'Ещё не было';}
 function fresh(v){return !!v&&Date.now()-new Date(v).getTime()<180000;}
-function serviceStatus(s){if(!s.checked_at)return 'Проверок ещё нет';if(!fresh(s.checked_at))return 'Нет свежих данных о сервере';if(s.failures)return 'Не удалось проверить сервер';if(!s.tunnel)return 'VPN-процесс недоступен';return `VPN-процесс отвечает · проверено ${dateLabel(s.succeeded_at)}`;}
+function serviceStatus(s){return healthLabel(s.id);}
 function svgNode(tag,attrs={}){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));return e;}
 // Null values and long intervals split paths; missing observations are never drawn as zero.
 function chart(points,series,start,end,gapSeconds,label){
@@ -54,4 +54,3 @@ async function loadTraffic(){
  table.append(body);$('#traffic-table').replaceChildren(table);$('#traffic-note').textContent=data.rows.length?`Последнее измерение: ${dateLabel(data.rows.reduce((a,r)=>r.last_at>a?r.last_at:a,''))}. Соединение означает handshake, а не проверку интернета. Пустые участки графика — нет полного измерения; объёмы за пропуски могут попадать в следующий интервал.`:'Измерений ещё нет. Добавьте устройство и выпустите профиль; счётчики появятся после опроса сервера.';
 }
 for(const id of ['user','device','server','period','group'])$(`#traffic-${id}`).addEventListener('change',()=>loadTraffic().catch(e=>notify(e.message)));
-loadCountries().catch(()=>{}).finally(()=>start());

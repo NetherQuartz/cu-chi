@@ -65,6 +65,10 @@ func run() error {
 	workerDone := make(chan struct{})
 	go func() { defer close(workerDone); vpnWorker.Run(workerCtx) }()
 	defer func() { stopWorker(); <-workerDone }()
+	pushDone := make(chan struct{})
+	pushWorker := worker.PushWorker{DB: db, Box: box, Origin: cfg.PublicURL}
+	go func() { defer close(pushDone); pushWorker.Run(workerCtx) }()
+	defer func() { stopWorker(); <-pushDone }()
 	app, err := httpapp.New(startup, cfg, db)
 	if err != nil {
 		return err

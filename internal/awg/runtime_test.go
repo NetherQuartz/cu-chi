@@ -58,7 +58,7 @@ func TestRuntimeRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("awg0.conf", settings.Server([]Peer{{Public: keys.Public, PSK: keys.PSK, Address: ProbeAddress}}))
+	write("awg0.conf", settings.Server([]Peer{{Public: keys.Public, PSK: keys.PSK, Address: "10.66.0.2"}}))
 	write("probe.conf", settings.Probe(keys))
 	write("payload", strings.Repeat("x", 65536))
 	run("run", "-d", "--name", server, "--network", name, "--network-alias", "cuchi-awg", "--cap-drop", "ALL", "--cap-add", "NET_ADMIN", "--device", "/dev/net/tun", "--read-only", "--tmpfs", "/run", "--tmpfs", "/tmp", "--sysctl", "net.ipv4.ip_forward=1", "-v", dir+":/config:ro", image)
@@ -85,7 +85,7 @@ func TestRuntimeRoundTrip(t *testing.T) {
 	script := `amneziawg-go -f probe0 >/tmp/probe.log 2>&1 &
 for i in $(seq 1 50); do [ -S /run/amneziawg/probe0.sock ] && break; sleep 0.1; done
 awg setconf probe0 /config/probe.conf
-ip addr add 10.66.255.254/32 dev probe0
+ip addr add 10.66.0.2/32 dev probe0
 ip link set probe0 mtu 1280 up
 ip route add 10.66.0.1/32 dev probe0
 ip route add 1.1.1.1/32 dev probe0
@@ -115,6 +115,21 @@ sleep 300`
 			t.Fatal("tunnel DNS returned no IP")
 		}
 		run("exec", client, "curl", "--fail", "--silent", "--show-error", "--connect-timeout", "5", "--max-time", "20", "https://1.1.1.1/cdn-cgi/trace")
+	}
+	// A recurring health probe adds/removes only its own peer while an existing
+	// client remains usable. Exercise the actual AWG 3.1 CLI and the shipped probe.
+	if os.Getenv("AWG_TEST_EGRESS") == "true" {
+		probeKeys := NewKeys()
+		write("health.psk", probeKeys.PSK+"\n")
+		write("probe.conf", settings.Probe(probeKeys))
+		run("exec", server, "awg", "set", "awg0", "peer", probeKeys.Public, "preshared-key", "/config/health.psk", "allowed-ips", ProbeAddress+"/32")
+		transfer(egressIP)
+		run("run", "--rm", "--network", name, "--cap-drop", "ALL", "--cap-add", "NET_ADMIN", "--device", "/dev/net/tun", "--read-only", "--tmpfs", "/run", "--tmpfs", "/tmp", "-v", dir+":/config:ro", "--entrypoint", "/usr/local/bin/cuchi-probe", image)
+		run("exec", server, "awg", "set", "awg0", "peer", probeKeys.Public, "remove")
+		if strings.TrimSpace(run("exec", server, "awg", "show", "awg0", "peers")) != keys.Public {
+			t.Fatal("synthetic probe altered user peers")
+		}
+		transfer(egressIP)
 	}
 	run("exec", server, "awg", "syncconf", "awg0", "/config/awg0.conf")
 	transfer(egressIP)

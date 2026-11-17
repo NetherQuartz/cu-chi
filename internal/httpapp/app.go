@@ -74,6 +74,8 @@ func (a *App) Handler() http.Handler {
 	a.vpnRoutes(mux)
 	a.sshKeyRoutes(mux)
 	a.monitoringRoutes(mux)
+	a.healthRoutes(mux)
+	a.pushRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { jsonResponse(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -133,7 +135,7 @@ func (a *App) Handler() http.Handler {
 	}))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { apiError(w, 404, "Не найдено") })
 	assets, _ := fs.Sub(web, "web")
-	for _, path := range []string{"/{$}", "/app.js", "/monitoring.js", "/countries.json", "/app.css", "/icon.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
+	for _, path := range []string{"/{$}", "/app.js", "/monitoring.js", "/notifications.js", "/sw.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/countries.json", "/app.css", "/icon.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
 		mux.Handle("GET "+path, http.FileServerFS(assets))
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

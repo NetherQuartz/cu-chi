@@ -3,7 +3,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = { me: null, view: 'devices', devices: [], servers: [], deleting: null, profiles: [], vpn: {}, jobs: [], sshKeys: [], deploying: null, profileAction: null, loading: false };
 const platforms = { ios: 'iOS / iPadOS', android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux', gateway: 'Домашний шлюз' };
-const actions = { 'ssh_key.created':'SSH-ключ сохранён', 'ssh_key.deleted':'SSH-ключ удалён', 'profile.issued':'Профиль запрошен', 'profile.revocation_requested':'Запрошен отзыв профилей', 'server.check_queued':'Запрошена проверка SSH', 'server.deploy_queued':'Запрошен деплой', 'server.default_changed':'Основной сервер изменён', 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
+const actions = { 'notifications.reminded':'Отправлены напоминания', 'server.maintenance_changed':'Режим обслуживания изменён', 'server.location_changed':'Местоположение изменено', 'ssh_key.created':'SSH-ключ сохранён', 'ssh_key.deleted':'SSH-ключ удалён', 'profile.issued':'Профиль запрошен', 'profile.revocation_requested':'Запрошен отзыв профилей', 'server.check_queued':'Запрошена проверка SSH', 'server.deploy_queued':'Запрошен деплой', 'server.default_changed':'Основной сервер изменён', 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
 let toastTimer, renderedSSHKeys;
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 function notify(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4000); }
@@ -34,12 +34,13 @@ async function start() {
   $('#avatar').textContent = state.me.user.username.slice(0, 1).toUpperCase(); $('#dev-badge').hidden = !state.me.dev_auth;
   $('#device-list-title').textContent = admin ? 'Все устройства' : 'Ваши устройства';
   $('.stat small').textContent = admin ? 'У всех пользователей' : 'В вашем кабинете';
-  await changeView('devices');
+  await changeView(new URLSearchParams(location.search).get('view')==='notifications'?'notifications':'devices');
+  updateNoticeCount();
  } catch (error) { showLogin(); $('#login-error').textContent = error.message; }
  finally { $('#loading').hidden = true; }
 }
 async function loadDevices() {
- [state.devices,state.profiles,state.vpn,state.services] = await Promise.all([api('/api/devices'),api('/api/profiles'),api('/api/vpn'),api('/api/services')]);
+ [state.devices,state.profiles,state.vpn,state.services,state.health] = await Promise.all([api('/api/devices'),api('/api/profiles'),api('/api/vpn'),api('/api/services'),api('/api/health')]);
  const container = $('#devices'); container.replaceChildren();
  $('#device-empty').hidden = state.devices.length > 0;
  $('#device-count').textContent = state.devices.length; $('#nav-count').textContent = state.devices.length;
@@ -70,7 +71,7 @@ async function loadDevices() {
  }
 }
 async function loadServers() {
- [state.servers,state.jobs,state.sshKeys,state.monitors] = await Promise.all([api('/api/admin/servers'),api('/api/admin/jobs'),api('/api/admin/ssh-keys'),api('/api/admin/monitoring')]); renderSSHKeys(); const container = $('#servers'); container.replaceChildren(); $('#server-empty').hidden = state.servers.length > 0;
+ [state.servers,state.jobs,state.sshKeys,state.monitors,state.health] = await Promise.all([api('/api/admin/servers'),api('/api/admin/jobs'),api('/api/admin/ssh-keys'),api('/api/admin/monitoring'),api('/api/health')]); renderSSHKeys(); const container = $('#servers'); container.replaceChildren(); $('#server-empty').hidden = state.servers.length > 0;
  for (const server of state.servers) {
   const card=node('article','server-card'); const top=node('div','card-top');
   const names={new:'Не развёрнут',checked:'SSH проверен',deploying:'Разворачивается',ready:'Развёрнут'};
@@ -90,26 +91,26 @@ async function loadServers() {
    state.deploying=server.id;const form=$('#deploy-form');form.elements.endpoint.value=server.endpoint||server.hostname;form.elements.port.value=server.vpn_port||51820;form.elements.endpoint.readOnly=!!server.endpoint;form.elements.port.readOnly=!!server.endpoint;openDialog('deploy');
   });controls.append(deploy);
   if(server.vpn_state==='ready'&&!server.is_default){const main=node('button','button primary','Сделать основным');main.addEventListener('click',()=>serverAction(server.id,'default'));controls.append(main);}
-  const place=node('button','button secondary','Страна и город');place.addEventListener('click',()=>editLocation(server));controls.append(place);card.append(locationLabel(server),controls,serverMonitoring(server));container.append(card);
+  const place=node('button','button secondary','Страна и город');place.addEventListener('click',()=>editLocation(server));controls.append(place,maintenanceButton(server));card.append(locationLabel(server),node('p','small',healthLabel(server.id)),node('p','small muted','Проверка с VPS: туннель, DNS и HTTPS. Доступ из сети устройства не проверяется.'),controls,serverMonitoring(server));container.append(card);
  }
 }
 async function loadEvents() {
- const events = await api('/api/admin/events'); const tbody = $('#events'); tbody.replaceChildren(); $('#event-empty').hidden = events.length > 0; $('.table-wrap').hidden = !events.length;
+ const events = await api('/api/admin/events'); const tbody = $('#events'); tbody.replaceChildren(); $('#event-empty').hidden = events.length > 0; $('#events-view .table-wrap').hidden = !events.length;
  for (const event of events) { const row = node('tr'); row.append(node('td', '', actions[event.action] || event.action), node('td', '', event.actor), node('td', '', new Date(event.created_at).toLocaleString('ru-RU'))); tbody.append(row); }
 }
 async function changeView(view) {
- if (!state.me || (!['devices','traffic'].includes(view) && state.me.user.role !== 'admin')) return;
+ if (!state.me || (!['devices','traffic','notifications'].includes(view) && state.me.user.role !== 'admin')) return;
  state.view = view;
- const title = { devices: 'Устройства', servers: 'Серверы', events: 'Журнал изменений', traffic:'Статистика' }[view];
+ const title = { devices: 'Устройства', servers: 'Серверы', events: 'Журнал изменений', traffic:'Статистика',notifications:'Уведомления' }[view];
  $('#page-title').textContent = title; $('#breadcrumb').textContent = `Личный кабинет / ${title}`;
  $('#page-eyebrow').textContent = view === 'devices' ? 'ЛИЧНЫЙ КАБИНЕТ' : 'УПРАВЛЕНИЕ';
- $('#page-description').textContent = { devices: 'Отдельная запись для каждого подключения.', servers: 'Ваши VPS и параметры доступа.', events: 'Последние 100 изменений в Củ Chi.', traffic:'Трафик и недавние соединения ваших устройств.' }[view];
- $('#add').hidden = ['events','traffic'].includes(view); $('#add').textContent = view === 'devices' ? '＋ Добавить устройство' : '＋ Добавить сервер';
- for (const name of ['devices', 'servers', 'events', 'traffic']) $(`#${name}-view`).hidden = name !== view;
+ $('#page-description').textContent = { devices: 'Отдельная запись для каждого подключения.', servers: 'Ваши VPS и параметры доступа.', events: 'Последние 100 изменений в Củ Chi.', traffic:'Трафик и недавние соединения ваших устройств.',notifications:'Состояние VPN и напоминания о профилях.' }[view];
+ $('#add').hidden = ['events','traffic','notifications'].includes(view); $('#add').textContent = view === 'devices' ? '＋ Добавить устройство' : '＋ Добавить сервер';
+ for (const name of ['devices', 'servers', 'events', 'traffic', 'notifications']) $(`#${name}-view`).hidden = name !== view;
  $$('[data-view]').forEach(el => el.classList.toggle('active', el.dataset.view === view));
  $('#page-error').hidden = true;
  state.loading=true;
- try { await ({ devices: loadDevices, servers: loadServers, events: loadEvents, traffic:loadTraffic }[view])(); }
+ try { await ({ devices: loadDevices, servers: loadServers, events: loadEvents, traffic:loadTraffic,notifications:loadNotifications }[view])(); }
  catch (error) { $('#page-error').textContent = error.message; $('#page-error').hidden = false; } finally {state.loading=false;}
 }
 function openDialog(name) { const dialog = $(`#${name}-dialog`); $('.form-error', dialog).textContent = ''; dialog.showModal(); }

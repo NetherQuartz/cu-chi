@@ -52,3 +52,17 @@
 @media(max-width:1100px){.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:740px){.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric-grid .stat strong{font-size:20px}.traffic-filters label{min-width:130px}.metric-panel{padding:14px}.chart-legend{flex-wrap:wrap}.chart-box svg{height:120px}}
 @media(prefers-color-scheme:dark){.legend-0{color:#86c89b}.legend-1{color:#94b5f7}.metric-panel{background:#0d120e}}
+
+/* Notification preferences remain easy to tap without widening mobile cards. */
+#notifications-view > .server-card {margin-bottom:20px}
+.push-preferences {display:grid;gap:12px;margin-top:22px}
+.push-preferences label {display:flex;align-items:center;gap:12px;margin:0}
+.push-preferences input[type=checkbox] {width:20px;height:20px;flex-shrink:0;accent-color:var(--green)}
+.push-preferences button {justify-self:start}
+.notice-card.unread {border-inline-start:4px solid var(--green)}
+.badge.critical {background:#fbe5e5;color:#a32929}
+@media(prefers-color-scheme:dark){.badge.critical{background:#461b1b;color:#ffb4b4}}
+
+#notifications-view .server-card > p {margin-top:10px;line-height:1.6}
+#notifications-view .server-card > .card-actions {margin-block:16px}
+#notifications-view .server-card > button {margin-top:16px}

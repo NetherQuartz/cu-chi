@@ -68,6 +68,7 @@ func (w *Worker) lead(ctx context.Context) {
 		j, err := w.DB.Claim(ctx)
 		if errors.Is(err, pgx.ErrNoRows) {
 			w.observeNext(ctx)
+			w.probeNext(ctx)
 			select {
 			case <-ctx.Done():
 				return
@@ -190,6 +191,9 @@ func (w *Worker) observe(ctx context.Context, t store.Target) {
 	}
 	key, err := w.Box.Open(t.EncryptedKey, namespace)
 	if err != nil {
+		save, done := context.WithTimeout(ctx, 5*time.Second)
+		defer done()
+		_ = w.DB.SaveObservation(save, t.ID, telemetry.Sample{At: time.Now()}, "credentials_unavailable")
 		return
 	}
 	defer clear(key)

@@ -55,3 +55,7 @@ Detailed requirements: [health and notifications](health-notifications.md). Moni
 
 
 Monitoring scope additions (2026-11-17): country flag and city for servers; traffic history by user (all devices), device (all servers), and device/server pair. Preserve measured history across profile rotations and migrations; expose sample age/gaps and avoid claiming that a recent handshake proves end-to-end connectivity. Detailed acceptance is in `health-notifications.md`.
+
+## Health/push implementation checkpoint
+
+Implemented: periodic isolated AWG DNS/HTTPS probe, debounced incidents/recovery, maintenance, role/audience-scoped inbox, automatic main-server-change reminders, manual outstanding-audience preview/send, final job-failure admin alerts, encrypted VAPID/Web Push with preferences and retries, PWA installation support, current-browser self-test and transport status. Monitoring CI passed at `90865df`. The subsequent health/push release still needs its own CI result and NAS/mobile acceptance. Optional scheduled reminders and arbitrary selected-user campaigns remain extensions. WARP, local WG gateway and VLESS remain future adapters.
