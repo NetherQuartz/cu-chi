@@ -20,10 +20,11 @@ type Remote interface {
 	Apply(context.Context, deployer.Credentials, deployer.Payload) error
 }
 type Worker struct {
-	DB     *store.Store
-	Box    *cryptobox.Box
-	Remote Remote
-	Image  string
+	DB           *store.Store
+	Box          *cryptobox.Box
+	Remote       Remote
+	Image        string
+	GatewayImage string
 }
 
 func (w *Worker) Run(ctx context.Context) {
@@ -54,6 +55,9 @@ func (w *Worker) lead(ctx context.Context) {
 			conn.Conn().Close(c)
 		}
 	}()
+	if _, err = conn.Exec(ctx, `UPDATE gateways SET state='queued',error='Worker restarted; reconciliation queued',run_after=now() WHERE state='running'`); err != nil {
+		return
+	}
 	// A crashed running job must not disappear or override a newer queued change.
 	_, err = conn.Exec(ctx, `UPDATE jobs j SET status=CASE WHEN EXISTS(SELECT 1 FROM jobs q WHERE q.server_id=j.server_id AND q.status='queued') THEN 'failed' ELSE 'queued' END,stage='interrupted',error='Worker restarted; reconciliation queued',run_after=now() WHERE status='running'`)
 	if err != nil {
@@ -67,6 +71,9 @@ func (w *Worker) lead(ctx context.Context) {
 		}
 		j, err := w.DB.Claim(ctx)
 		if errors.Is(err, pgx.ErrNoRows) {
+			if w.gatewayNext(ctx) {
+				continue
+			}
 			w.observeNext(ctx)
 			w.probeNext(ctx)
 			select {

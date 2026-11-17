@@ -17,6 +17,7 @@ type Config struct {
 	MasterKey                                             []byte
 	DevAuth                                               bool
 	AWGImage                                              string
+	GatewayImage                                          string
 	Issuer, ClientID, ClientSecret, AdminGroup, UserGroup string
 }
 
@@ -25,6 +26,10 @@ func Load() (Config, error) {
 	c.AWGImage = value("CUCHI_AWG_IMAGE", deployer.RuntimeImage)
 	if c.AWGImage != "" && !deployer.ValidImage(c.AWGImage) {
 		return c, errors.New("CUCHI_AWG_IMAGE must be a pinned official Củ Chi runtime digest")
+	}
+	c.GatewayImage = value("CUCHI_GATEWAY_IMAGE", deployer.GatewayImage)
+	if c.GatewayImage != "" && !deployer.ValidGatewayImage(c.GatewayImage) {
+		return c, errors.New("CUCHI_GATEWAY_IMAGE must be a pinned Củ Chi gateway digest")
 	}
 	var err error
 	c.MasterKey, err = base64.StdEncoding.DecodeString(os.Getenv("CUCHI_MASTER_KEY"))

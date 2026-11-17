@@ -17,7 +17,7 @@ type SSHKey struct {
 }
 
 func (s *Store) SSHKeys(ctx context.Context) ([]SSHKey, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT k.id::text,k.name,k.public_key,k.fingerprint,k.created_at,(SELECT count(*) FROM servers WHERE ssh_key_id=k.id) FROM ssh_keys k ORDER BY k.created_at DESC`)
+	rows, err := s.Pool.Query(ctx, `SELECT k.id::text,k.name,k.public_key,k.fingerprint,k.created_at,(SELECT count(*) FROM servers WHERE ssh_key_id=k.id)+(SELECT count(*) FROM gateways WHERE ssh_key_id=k.id) FROM ssh_keys k ORDER BY k.created_at DESC`)
 	if err != nil {
 		return nil, err
 	}

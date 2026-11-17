@@ -60,7 +60,7 @@ func run() error {
 	}
 	defer db.Pool.Close()
 	box, _ := cryptobox.New(cfg.MasterKey)
-	vpnWorker := worker.Worker{DB: db, Box: box, Remote: deployer.SSH{}, Image: cfg.AWGImage}
+	vpnWorker := worker.Worker{DB: db, Box: box, Remote: deployer.SSH{}, Image: cfg.AWGImage, GatewayImage: cfg.GatewayImage}
 	workerCtx, stopWorker := context.WithCancel(ctx)
 	workerDone := make(chan struct{})
 	go func() { defer close(workerDone); vpnWorker.Run(workerCtx) }()

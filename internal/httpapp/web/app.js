@@ -101,16 +101,16 @@ async function loadEvents() {
 async function changeView(view) {
  if (!state.me || (!['devices','traffic','notifications'].includes(view) && state.me.user.role !== 'admin')) return;
  state.view = view;
- const title = { devices: 'Устройства', servers: 'Серверы', events: 'Журнал изменений', traffic:'Статистика',notifications:'Уведомления' }[view];
+ const title = { devices: 'Устройства', servers: 'Серверы', gateways:'Домашние шлюзы', events: 'Журнал изменений', traffic:'Статистика',notifications:'Уведомления' }[view];
  $('#page-title').textContent = title; $('#breadcrumb').textContent = `Личный кабинет / ${title}`;
  $('#page-eyebrow').textContent = view === 'devices' ? 'ЛИЧНЫЙ КАБИНЕТ' : 'УПРАВЛЕНИЕ';
- $('#page-description').textContent = { devices: 'Отдельная запись для каждого подключения.', servers: 'Ваши VPS и параметры доступа.', events: 'Последние 100 изменений в Củ Chi.', traffic:'Трафик и недавние соединения ваших устройств.',notifications:'Состояние VPN и напоминания о профилях.' }[view];
- $('#add').hidden = ['events','traffic','notifications'].includes(view); $('#add').textContent = view === 'devices' ? '＋ Добавить устройство' : '＋ Добавить сервер';
- for (const name of ['devices', 'servers', 'events', 'traffic', 'notifications']) $(`#${name}-view`).hidden = name !== view;
+ $('#page-description').textContent = { devices: 'Отдельная запись для каждого подключения.', servers: 'Ваши VPS и параметры доступа.', gateways:'Подключение Keenetic к AmneziaWG через локальную VM.', events: 'Последние 100 изменений в Củ Chi.', traffic:'Трафик и недавние соединения ваших устройств.',notifications:'Состояние VPN и напоминания о профилях.' }[view];
+ $('#add').hidden = ['events','traffic','notifications'].includes(view); $('#add').textContent = view === 'devices' ? '＋ Добавить устройство' : view==='gateways'?'＋ Добавить шлюз':'＋ Добавить сервер';
+ for (const name of ['devices', 'servers', 'gateways', 'events', 'traffic', 'notifications']) $(`#${name}-view`).hidden = name !== view;
  $$('[data-view]').forEach(el => el.classList.toggle('active', el.dataset.view === view));
  $('#page-error').hidden = true;
  state.loading=true;
- try { await ({ devices: loadDevices, servers: loadServers, events: loadEvents, traffic:loadTraffic,notifications:loadNotifications }[view])(); }
+ try { await ({ devices: loadDevices, servers: loadServers, gateways:loadGateways, events: loadEvents, traffic:loadTraffic,notifications:loadNotifications }[view])(); }
  catch (error) { $('#page-error').textContent = error.message; $('#page-error').hidden = false; } finally {state.loading=false;}
 }
 function openDialog(name) { const dialog = $(`#${name}-dialog`); $('.form-error', dialog).textContent = ''; dialog.showModal(); }
@@ -123,7 +123,7 @@ function bindForm(name, handler) {
 $$('[data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 $$('dialog').forEach(dialog => dialog.addEventListener('close', () => { $$('textarea, input[type="password"]', dialog).forEach(el => { el.value = ''; }); }));
 $$('[data-view]').forEach(button => button.addEventListener('click', () => changeView(button.dataset.view)));
-$('#add').addEventListener('click', () => openDialog(state.view === 'devices' ? 'device' : 'server'));
+$('#add').addEventListener('click', () => openDialog(state.view === 'devices' ? 'device' : state.view==='gateways'?'gateway':'server'));
 $('#empty-add-device').addEventListener('click', () => openDialog('device')); $('#empty-add-server').addEventListener('click', () => openDialog('server'));
 $('#logout').addEventListener('click', async () => { try { await api('/api/logout', { method: 'POST' }); state.me = null; location.reload(); } catch (error) { notify(error.message); } });
 $('#dev-login').addEventListener('click', async event => { event.currentTarget.disabled = true; try { await api('/auth/dev', { method: 'POST' }); await start(); } catch (error) { $('#login-error').textContent = error.message; } finally { $('#dev-login').disabled = false; } });
@@ -139,7 +139,7 @@ async function serverAction(id,action){try{await api(`/api/admin/servers/${id}/$
 bindForm('deploy',async form=>{const input=Object.fromEntries(new FormData(form));input.port=Number(input.port);await api(`/api/admin/servers/${state.deploying}/deploy`,{method:'POST',body:JSON.stringify(input)});$('#deploy-dialog').close();await loadServers();notify('Деплой поставлен в очередь');});
 bindForm('profile',async()=>{const {device,action}=state.profileAction;await api(`/api/devices/${device.id}/${action==='issue'?'profiles':'revoke'}`,{method:'POST'});$('#profile-dialog').close();await loadDevices();notify('Задание поставлено в очередь');});
 $('#qr-dialog').addEventListener('close',()=>$('#profile-qr').removeAttribute('src'));
-setInterval(async()=>{if(!state.me||state.loading||document.hidden||$('dialog[open]')||$('#servers details[open]'))return;state.loading=true;try{if(state.view==='servers')await loadServers();if(state.view==='devices')await loadDevices();if(state.view==='traffic')await loadTraffic();}catch(e){$('#page-error').textContent=e.message;$('#page-error').hidden=false;}finally{state.loading=false;}},5000);
+setInterval(async()=>{if(!state.me||state.loading||document.hidden||$('dialog[open]')||$('#servers details[open]'))return;state.loading=true;try{if(state.view==='servers')await loadServers();if(state.view==='gateways')await loadGateways();if(state.view==='devices')await loadDevices();if(state.view==='traffic')await loadTraffic();}catch(e){$('#page-error').textContent=e.message;$('#page-error').hidden=false;}finally{state.loading=false;}},5000);
 function updateHostPolicy(){const field=$('#server-form').elements.host_key_fingerprint;const manual=$('#server-form').elements.host_key_policy.value==='manual';$('#host-fingerprint-field').hidden=!manual;$('#host-fingerprint-help').hidden=!manual;field.disabled=!manual;field.required=manual;if(!manual)field.value='';}
 $('#server-form').elements.host_key_policy.addEventListener('change',updateHostPolicy);
 function updateSSHMethod() {
@@ -158,7 +158,7 @@ function renderSSHKeys(){
  const list=$('#ssh-keys');list.replaceChildren();
  for(const key of state.sshKeys){
   const option=node('option','',key.name);option.value=key.id;select.append(option);
-  const card=node('article','server-card');card.append(node('h3','',key.name),node('p','small muted',`Серверов: ${key.server_count}`));
+  const card=node('article','server-card');card.append(node('h3','',key.name),node('p','small muted',`Хостов: ${key.server_count}`));
   const details=node('details');details.append(node('summary','','Публичный ключ для VPS'),node('code','',key.public_key),node('p','small muted',key.fingerprint));card.append(details);
   const controls=node('div','card-actions');const copy=node('button','button secondary','Копировать публичный ключ');copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(key.public_key+'\n');notify('Публичный ключ скопирован');}catch{details.open=true;notify('Выделите и скопируйте публичный ключ');}});controls.append(copy);
   const remove=node('button','button secondary','Удалить ключ');remove.disabled=key.server_count>0;remove.addEventListener('click',async()=>{if(!confirm(`Удалить ключ «${key.name}» из Củ Chi? Его публичная часть на VPS останется.`))return;try{await api(`/api/admin/ssh-keys/${key.id}`,{method:'DELETE'});await loadServers();notify('Ключ удалён');}catch(e){notify(e.message);}});controls.append(remove);card.append(controls);list.append(card);

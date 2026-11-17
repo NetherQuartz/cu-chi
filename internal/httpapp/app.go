@@ -26,6 +26,7 @@ import (
 	"github.com/NetherQuartz/cu-chi/internal/config"
 	"github.com/NetherQuartz/cu-chi/internal/cryptobox"
 	"github.com/NetherQuartz/cu-chi/internal/deployer"
+	"github.com/NetherQuartz/cu-chi/internal/gateway"
 	"github.com/NetherQuartz/cu-chi/internal/store"
 )
 
@@ -72,6 +73,7 @@ func New(ctx context.Context, cfg config.Config, db *store.Store) (*App, error) 
 func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	a.vpnRoutes(mux)
+	a.gatewayRoutes(mux)
 	a.sshKeyRoutes(mux)
 	a.monitoringRoutes(mux)
 	a.healthRoutes(mux)
@@ -135,7 +137,7 @@ func (a *App) Handler() http.Handler {
 	}))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { apiError(w, 404, "Не найдено") })
 	assets, _ := fs.Sub(web, "web")
-	for _, path := range []string{"/{$}", "/app.js", "/monitoring.js", "/notifications.js", "/sw.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/countries.json", "/app.css", "/icon.svg", "/bell.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
+	for _, path := range []string{"/{$}", "/app.js", "/monitoring.js", "/notifications.js", "/gateways.js", "/sw.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/countries.json", "/app.css", "/icon.svg", "/bell.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
 		mux.Handle("GET "+path, http.FileServerFS(assets))
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -257,6 +259,8 @@ var hostnameRE = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0
 
 func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Session) {
 	var input struct {
+		RouterIP      string `json:"router_ip"`
+		ClientCIDRs   string `json:"client_cidrs"`
 		CountryCode   string `json:"country_code"`
 		City          string `json:"city"`
 		Name          string `json:"name"`
@@ -271,6 +275,20 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 		SSHKeyID      string `json:"ssh_key_id"`
 	}
 	if !decode(w, r, &input) {
+		return
+	}
+	isGateway := r.Pattern == "POST /api/admin/gateways"
+	var lan gateway.LAN
+	if isGateway {
+		var e error
+		lan, e = gateway.NewLAN(strings.TrimSpace(input.Hostname), strings.TrimSpace(input.RouterIP), input.ClientCIDRs)
+		if e != nil {
+			apiError(w, 400, "Укажите разные локальные IPv4 VM и Keenetic; сети клиентов не должны пересекаться с 10.66.0.0/16 и 10.77.0.0/24")
+			return
+		}
+		input.RouterIP = strings.TrimSpace(input.RouterIP)
+	} else if input.RouterIP != "" || input.ClientCIDRs != "" {
+		apiError(w, 400, "Параметры шлюза задаются в разделе шлюзов")
 		return
 	}
 	input.City = strings.TrimSpace(input.City)
@@ -345,7 +363,25 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 	v := store.Server{CountryCode: input.CountryCode, City: input.City, ID: cryptobox.ID(), Name: input.Name, Hostname: input.Hostname, SSHPort: input.SSHPort, SSHUser: input.SSHUser, Fingerprint: input.Fingerprint, AuthMethod: input.AuthMethod, SSHKeyID: input.SSHKeyID, HostKeyPolicy: input.HostKeyPolicy}
 	var encrypted []byte
 	if secret != nil {
-		encrypted = a.box.Seal(secret, "server:"+v.ID)
+		namespace := "server:"
+		if isGateway {
+			namespace = "gateway:"
+		}
+		encrypted = a.box.Seal(secret, namespace+v.ID)
+	}
+	if isGateway {
+		g, e := a.db.CreateGateway(r.Context(), s.User, store.Gateway{Server: v, RouterIP: input.RouterIP, ClientCIDRs: input.ClientCIDRs, EncryptedCredential: encrypted, EncryptedLAN: a.box.Seal(awgMarshalLAN(lan), "gateway-lan:"+v.ID)})
+		if e != nil {
+			var pg *pgconn.PgError
+			if errors.As(e, &pg) && pg.Code == "23503" {
+				apiError(w, 400, "Сохранённый SSH-ключ больше не существует")
+				return
+			}
+			a.failure(w, e)
+			return
+		}
+		jsonResponse(w, 201, g)
+		return
 	}
 	v, err = a.db.CreateServer(r.Context(), s.User, v, encrypted)
 	input.PrivateKey = ""

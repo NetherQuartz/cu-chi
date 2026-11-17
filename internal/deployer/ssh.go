@@ -131,7 +131,7 @@ func run(ctx context.Context, c *ssh.Client, user, script string, args []string,
 	defer stop()
 	err = session.Run(cmd)
 	if err != nil {
-		for _, code := range []string{"root_required", "ubuntu_lts_required", "amd64_required", "tun_unavailable", "active_ufw", "foreign_container", "foreign_network", "stale_generation", "runtime_start_failed"} {
+		for _, code := range []string{"root_required", "ubuntu_lts_required", "amd64_required", "tun_unavailable", "active_ufw", "foreign_container", "foreign_network", "stale_generation", "runtime_start_failed", "gateway_lan_ip_missing", "wireguard_module_missing", "gateway_dedicated_vm_required", "gateway_egress_failed"} {
 			if strings.Contains(out.b.String(), "CUCHI_ERROR_"+code) {
 				return "", errors.New(code)
 			}

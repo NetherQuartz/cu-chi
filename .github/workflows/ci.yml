@@ -51,6 +51,7 @@ jobs:
       packages: write
     outputs:
       digest: ${{ steps.push.outputs.digest }}
+      gateway_digest: ${{ steps.gateway-push.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -73,6 +74,25 @@ jobs:
           AWG_TEST_IMAGE: cuchi-awg:test
           AWG_TEST_EGRESS: "true"
         run: go test -v -count=1 ./internal/awg
+      - name: Build LAN gateway runtime
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: deploy/awg/Dockerfile
+          target: gateway
+          load: true
+          tags: cuchi-gateway:test
+          platforms: linux/amd64
+          cache-from: type=gha,scope=awg
+          cache-to: type=gha,scope=gateway,mode=max
+      - name: Test WG to AWG forwarding, DNS, MTU and fail-closed recovery
+        env:
+          AWG_TEST_IMAGE: cuchi-awg:test
+          GATEWAY_TEST_IMAGE: cuchi-gateway:test
+          AWG_TEST_EGRESS: "true"
+        run: |
+          sudo modprobe wireguard
+          go test -v -count=1 ./internal/gateway
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: github.event_name != 'pull_request'
         with:
@@ -90,6 +110,18 @@ jobs:
           platforms: linux/amd64
           tags: ghcr.io/netherquartz/cu-chi-awg:sha-${{ github.sha }}
           cache-from: type=gha,scope=awg
+      - name: Publish tested gateway
+        id: gateway-push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: deploy/awg/Dockerfile
+          target: gateway
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/netherquartz/cu-chi-gateway:sha-${{ github.sha }}
+          cache-from: type=gha,scope=gateway
   publish:
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: [test, runtime]
@@ -120,7 +152,9 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          build-args: AWG_IMAGE=ghcr.io/netherquartz/cu-chi-awg@${{ needs.runtime.outputs.digest }}
+          build-args: |
+            AWG_IMAGE=ghcr.io/netherquartz/cu-chi-awg@${{ needs.runtime.outputs.digest }}
+            GATEWAY_IMAGE=ghcr.io/netherquartz/cu-chi-gateway@${{ needs.runtime.outputs.gateway_digest }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

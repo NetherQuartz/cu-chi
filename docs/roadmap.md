@@ -19,7 +19,7 @@
 8. Make reissue/withdrawal durable, auditable operations. Offline-server revocations stay pending visibly.
 9. Main-server selection and voluntary user migration are implemented. A configurable overlap deadline remains future work; current reissue immediately queues old-key removal.
 
-Implemented code includes steps 1–8; real VPS/official-client acceptance is still pending. Expiry, configurable grace periods and retirement controls remain future work.
+Implemented code includes steps 1–8; real VPS deployment, external AWG traffic and revocation passed. Official native-client acceptance remains pending. Expiry, configurable grace periods and retirement controls remain future work.
 
 Acceptance: admin registers a VPS and deploys it; a normal user generates two distinct working device profiles; another user cannot access either; reissue/retry creates no duplicates; withdrawal really removes the server peer.
 
@@ -58,4 +58,8 @@ Monitoring scope additions (2026-11-17): country flag and city for servers; traf
 
 ## Health/push implementation checkpoint
 
-Implemented: periodic isolated AWG DNS/HTTPS probe, debounced incidents/recovery, maintenance, role/audience-scoped inbox, automatic main-server-change reminders, manual outstanding-audience preview/send, final job-failure admin alerts, encrypted VAPID/Web Push with preferences and retries, PWA installation support, current-browser self-test and transport status. Monitoring CI passed at `90865df`. The subsequent health/push release still needs its own CI result and NAS/mobile acceptance. Optional scheduled reminders and arbitrary selected-user campaigns remain extensions. WARP, local WG gateway and VLESS remain future adapters.
+Implemented: periodic isolated AWG DNS/HTTPS probe, debounced incidents/recovery, maintenance, role/audience-scoped inbox, automatic main-server-change reminders, manual outstanding-audience preview/send, final job-failure admin alerts, encrypted VAPID/Web Push with preferences and retries, PWA installation support, current-browser self-test and transport status. Monitoring CI passed at `90865df`. Health/push CI passed, the NAS was upgraded, server probes and desktop Chrome push receipt were confirmed; native mobile acceptance remains pending. Optional scheduled reminders and arbitrary selected-user campaigns remain extensions. WARP, local WG gateway and VLESS remain future adapters.
+
+## Local gateway implementation in progress
+
+The owner confirmed VMM support and chose fail-closed. Implementing an administrator-managed Ubuntu VM registered/deployed by password or saved SSH key from the portal, stable LAN WireGuard identity, independent AWG profile, profile-drift display and CI packet tests. See [local gateway](local-gateway.md). Runtime/CI and real VM/Keenetic acceptance are still pending.

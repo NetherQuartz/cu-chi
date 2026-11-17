@@ -8,8 +8,9 @@ COPY internal/ internal/
 ARG TARGETOS
 ARG TARGETARCH
 ARG AWG_IMAGE
+ARG GATEWAY_IMAGE
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/NetherQuartz/cu-chi/internal/deployer.RuntimeImage=$AWG_IMAGE" -o /out/cuchi ./cmd/cuchi
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/NetherQuartz/cu-chi/internal/deployer.RuntimeImage=$AWG_IMAGE -X github.com/NetherQuartz/cu-chi/internal/deployer.GatewayImage=$GATEWAY_IMAGE" -o /out/cuchi ./cmd/cuchi
 
 FROM scratch
 LABEL org.opencontainers.image.source="https://github.com/NetherQuartz/cu-chi"

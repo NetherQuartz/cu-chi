@@ -36,7 +36,7 @@ SSH input accepts a server-specific private key without a passphrase, a password
 
 Audits record actor, action, resource ID and timestamp in the same transaction as the mutation. They do not record request payloads. All responses are `Cache-Control: no-store`; a future PWA service worker must never cache authenticated APIs, profile downloads or secrets.
 
-Master-key rotation, encrypted backups and restore exercises remain future work. Preserve the original master key across container updates.
+Master-key rotation and encryption of entire backup bundles remain future work. NAS-local database/master-key backups and isolated restore exercises are implemented. Preserve the original master key across container updates.
 
 ## VPN state and worker
 
@@ -76,3 +76,7 @@ Push delivery has a separate worker so a slow SSH job does not delay notificatio
 The service worker does not cache pages, APIs or configuration files. Push content is generic and contains no VPN keys, device names, addresses or diagnostics. The self-test endpoint targets only the requesting user's supplied, already-owned browser subscription. Read-state suppresses pending delivery; being shown in the inbox is not a claim that the push was delivered. See health-notifications.md for concrete defaults and platform limits.
 
 Manual reminder requests use an administrator-scoped UUID and a transactionally stored result. There is no per-day send cap. A distinct explicit action can send immediately, while retrying the same UUID cannot expand the original audience. Default-server changes have independent campaign IDs and expire pending older migration messages. Request deduplication metadata retains 90 days, matching the inbox. Production Compose inherits the host logging driver for DSM compatibility; log retention follows the host configuration.
+
+## Managed local gateway
+
+Migration 011 separates gateway VM inventory/credentials and its durable operation state from public VPN servers; a VM can never become the main VPS by accident. Each gateway owns one ordinary device record and immutable encrypted LAN WG identity. Passwords use gateway:<id> associated data; saved SSH keys retain their existing namespace. The VPS worker shares its leadership with gateway deployment, prefers pending VPS jobs and recovers interrupted gateway attempts. Generation fences, remote flock and attempt tokens reject stale operations/results. Profile deployment is explicit after issuance; the current and last-applied profile IDs are kept separately. See local-gateway.md for routing, policy and acceptance boundaries.
