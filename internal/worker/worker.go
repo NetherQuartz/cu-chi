@@ -11,6 +11,7 @@ import (
 	"github.com/NetherQuartz/cu-chi/internal/cryptobox"
 	"github.com/NetherQuartz/cu-chi/internal/deployer"
 	"github.com/NetherQuartz/cu-chi/internal/store"
+	"github.com/NetherQuartz/cu-chi/internal/telemetry"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -66,6 +67,7 @@ func (w *Worker) lead(ctx context.Context) {
 		}
 		j, err := w.DB.Claim(ctx)
 		if errors.Is(err, pgx.ErrNoRows) {
+			w.observeNext(ctx)
 			select {
 			case <-ctx.Done():
 				return
@@ -80,6 +82,9 @@ func (w *Worker) lead(ctx context.Context) {
 		op, cancel := context.WithTimeout(ctx, 20*time.Minute)
 		t, err := w.DB.Target(op, j.ServerID)
 		if err == nil {
+			if j.Kind != "check" && t.Generation > 0 {
+				w.observe(op, t)
+			}
 			err = w.Execute(op, j, t)
 		}
 		cancel()
@@ -150,4 +155,62 @@ func (w *Worker) Execute(ctx context.Context, j store.Job, t store.Target) error
 	probe := awg.NewKeys()
 	p := deployer.Payload{ServerID: t.ID, Image: w.Image, Port: t.VPNPort, Generation: t.Generation, Config: s.Server(peers), WithProbe: s.Server(append(peers, awg.Peer{Public: probe.Public, PSK: probe.PSK, Address: awg.ProbeAddress})), Probe: s.Probe(probe), PublicKeys: public, Install: j.Kind == "deploy"}
 	return w.Remote.Apply(ctx, c, p)
+}
+
+// Monitoring shares the existing worker leadership and yields to queued changes.
+// It is read-only and cannot restart services or replace peers.
+func (w *Worker) observeNext(ctx context.Context) {
+	if _, ok := w.Remote.(interface {
+		Observe(context.Context, deployer.Credentials, string) (telemetry.Sample, error)
+	}); !ok {
+		return
+	}
+	id, err := w.DB.NextMonitor(ctx)
+	if err != nil {
+		return
+	}
+	t, err := w.DB.Target(ctx, id)
+	if err != nil {
+		return
+	}
+	w.observe(ctx, t)
+}
+func (w *Worker) observe(ctx context.Context, t store.Target) {
+	remote, ok := w.Remote.(interface {
+		Observe(context.Context, deployer.Credentials, string) (telemetry.Sample, error)
+	})
+	if !ok {
+		return
+	}
+	op, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	namespace := "server:" + t.ID
+	if t.AuthMethod == "saved_key" {
+		namespace = "ssh-key:" + t.SSHKeyID
+	}
+	key, err := w.Box.Open(t.EncryptedKey, namespace)
+	if err != nil {
+		return
+	}
+	defer clear(key)
+	c := deployer.Credentials{Host: t.Hostname, Port: t.SSHPort, User: t.SSHUser, Fingerprint: t.Fingerprint, Key: key}
+	if t.AuthMethod == "password" {
+		c.AuthMethod = "password"
+		c.Password = key
+		c.Key = nil
+	}
+	sample, err := remote.Observe(op, c, t.ID)
+	failure := ""
+	if err != nil {
+		sample = telemetry.Sample{At: time.Now().UTC()}
+		failure = "collection_failed"
+		if errors.Is(err, deployer.ErrHostKey) {
+			failure = "host_key_mismatch"
+		}
+	}
+	save, done := context.WithTimeout(ctx, 5*time.Second)
+	defer done()
+	if w.DB.SaveObservation(save, t.ID, sample, failure) != nil {
+		slog.Warn("monitoring result could not be saved")
+	}
 }

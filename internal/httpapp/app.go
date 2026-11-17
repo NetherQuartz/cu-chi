@@ -73,6 +73,7 @@ func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	a.vpnRoutes(mux)
 	a.sshKeyRoutes(mux)
+	a.monitoringRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { jsonResponse(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -132,7 +133,7 @@ func (a *App) Handler() http.Handler {
 	}))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { apiError(w, 404, "Не найдено") })
 	assets, _ := fs.Sub(web, "web")
-	for _, path := range []string{"/{$}", "/app.js", "/app.css", "/icon.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
+	for _, path := range []string{"/{$}", "/app.js", "/monitoring.js", "/countries.json", "/app.css", "/icon.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
 		mux.Handle("GET "+path, http.FileServerFS(assets))
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -254,6 +255,8 @@ var hostnameRE = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0
 
 func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Session) {
 	var input struct {
+		CountryCode   string `json:"country_code"`
+		City          string `json:"city"`
 		Name          string `json:"name"`
 		Hostname      string `json:"hostname"`
 		SSHPort       int    `json:"ssh_port"`
@@ -266,6 +269,11 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 		SSHKeyID      string `json:"ssh_key_id"`
 	}
 	if !decode(w, r, &input) {
+		return
+	}
+	input.City = strings.TrimSpace(input.City)
+	if !validLocation(input.CountryCode, input.City) {
+		apiError(w, 400, "Проверьте страну и город")
 		return
 	}
 	input.Name = strings.TrimSpace(input.Name)
@@ -332,7 +340,7 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 			return
 		}
 	}
-	v := store.Server{ID: cryptobox.ID(), Name: input.Name, Hostname: input.Hostname, SSHPort: input.SSHPort, SSHUser: input.SSHUser, Fingerprint: input.Fingerprint, AuthMethod: input.AuthMethod, SSHKeyID: input.SSHKeyID, HostKeyPolicy: input.HostKeyPolicy}
+	v := store.Server{CountryCode: input.CountryCode, City: input.City, ID: cryptobox.ID(), Name: input.Name, Hostname: input.Hostname, SSHPort: input.SSHPort, SSHUser: input.SSHUser, Fingerprint: input.Fingerprint, AuthMethod: input.AuthMethod, SSHKeyID: input.SSHKeyID, HostKeyPolicy: input.HostKeyPolicy}
 	var encrypted []byte
 	if secret != nil {
 		encrypted = a.box.Seal(secret, "server:"+v.ID)

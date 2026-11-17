@@ -59,3 +59,10 @@ The gateway, WARP and VLESS are separate adapters. WARP egress does not cure an 
 ## Delivery
 
 GitHub Actions runs tests with PostgreSQL before building and publishing a static, non-root container for amd64/arm64. Final images are published to GHCR from CI only. `main` is convenient for development; a SHA/release tag is preferred on the NAS. Package visibility must be verified independently. Update/rollback instructions must state database compatibility.
+
+
+## Monitoring and measured traffic
+
+The worker samples deployed servers through the same pinned SSH transport, leadership and remote flock used for deployment, without modifying peers or restarting the runtime. Raw host samples and per-device/server traffic deltas retain 30 days; lifetime observed totals preserve ownership and device names separately from disposable profile generations. Initial counters and resets start a baseline. Missing/old samples are not zero utilization, and handshake recency is not proof of internet connectivity. Public service responses contain only friendly location/status metadata. Resource history and infrastructure diagnostics are administrator-only. Collection samples CPU interval deltas, MemAvailable, root filesystem use and the default IPv4 interface. See kernel proc documentation: https://kernel.org/doc/html/v6.15/filesystems/proc.html.
+
+Country and city are optional administrator-entered metadata. Flags are vendored ISO assets; no external icon or geolocation request occurs on page load. User traffic queries enforce owner scope in SQL, including historical/deleted-device records. Period summaries can be approximate at missed sampling intervals; they are not provider billing counters.

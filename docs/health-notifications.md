@@ -1,6 +1,6 @@
 # Health, profile status and notifications — next milestone
 
-Status: requirements agreed on 2026-11-17; not implemented by the VPS/profile release. The owner does not want automatic probes from users' networks. Keep the existing manual import check for the first real client only.
+Status: requirements agreed on 2026-11-17. Resource/traffic sampling, dashboards, location and basic service status are implemented locally in the monitoring milestone; NAS rollout is pending. Periodic full tunnel probes, incidents and notifications are still pending. The owner does not want automatic probes from users' networks. Keep the existing manual import check for the first real client only.
 
 ## Separate the facts shown in the portal
 
@@ -82,3 +82,6 @@ Acceptance: profile rotation and server migration retain aggregate history; peer
 Show country flag plus localized country name and optional city beside the friendly server name, in both administrator cards and users' assigned-server/profile details. Store an ISO 3166-1 alpha-2 country code and a bounded plain-text city; allow an unset location. The flag must have a textual equivalent and should use self-hosted SVG assets for consistent rendering on Windows and mobile. Do not rely on emoji flag support alone. Validate/escape city input; never insert it as HTML.
 
 Country and city are administrator-entered metadata, editable without redeploying or invalidating any profiles. Optional IP geolocation can suggest a value later, explicitly approximate and always overridable; it is not a health signal and should not require a third-party request on every page view. The owner confirmed both country flag and city are desired. Planned with the monitoring dashboard, not implemented in the current release.
+
+
+Implementation retention choice: this milestone keeps minute-level host/traffic details for 30 days and lifetime observed pair totals, rather than introducing multi-level 12-month rollups immediately. The first observation is a baseline, never retrospective usage. The dashboard provides hour/day resource charts and hour/day/week/30-day traffic periods; polling yields to deployment work. Collection failures and old samples are explicitly shown. Recurring full-tunnel probes and push incidents remain pending.
