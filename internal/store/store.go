@@ -44,6 +44,11 @@ type Server struct {
 	SSHUser     string    `json:"ssh_user"`
 	Fingerprint string    `json:"host_key_fingerprint"`
 	CreatedAt   time.Time `json:"created_at"`
+	Endpoint    string    `json:"endpoint"`
+	VPNPort     int       `json:"vpn_port"`
+	VPNState    string    `json:"vpn_state"`
+	VPNError    string    `json:"vpn_error"`
+	Default     bool      `json:"is_default"`
 }
 type Event struct {
 	ID         int64     `json:"id"`
@@ -185,17 +190,31 @@ func (s *Store) CreateDevice(ctx context.Context, u User, name, platform string)
 	return d, tx.Commit(ctx)
 }
 func (s *Store) DeleteDevice(ctx context.Context, u User, id string) error {
-	tx, err := s.Pool.Begin(ctx)
+	tx, err := vpnTx(ctx, s)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	result, err := tx.Exec(ctx, "DELETE FROM devices WHERE id=$1::uuid AND (user_id=$2::uuid OR $3)", id, u.ID, u.Role == "admin")
+	var found string
+	err = tx.QueryRow(ctx, "SELECT id::text FROM devices WHERE id=$1 AND (user_id=$2 OR $3) FOR UPDATE", id, u.ID, u.Role == "admin").Scan(&found)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
 	if err != nil {
 		return err
 	}
-	if result.RowsAffected() == 0 {
-		return ErrNotFound
+	var active bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM profiles WHERE device_id=$1 AND state<>'revoked')", id).Scan(&active); err != nil {
+		return err
+	}
+	if active {
+		return ErrConflict
+	}
+	if _, err = tx.Exec(ctx, "DELETE FROM profiles WHERE device_id=$1", id); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, "DELETE FROM devices WHERE id=$1", id); err != nil {
+		return err
 	}
 	if err = audit(ctx, tx, u.ID, "device.deleted", id); err != nil {
 		return err
@@ -203,7 +222,7 @@ func (s *Store) DeleteDevice(ctx context.Context, u User, id string) error {
 	return tx.Commit(ctx)
 }
 func (s *Store) Servers(ctx context.Context) ([]Server, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT id::text,name,hostname,ssh_port,ssh_user,host_key_fingerprint,created_at FROM servers ORDER BY created_at DESC")
+	rows, err := s.Pool.Query(ctx, "SELECT s.id::text,s.name,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,s.created_at,s.endpoint,s.vpn_port,s.vpn_state,s.vpn_error,COALESCE(v.default_server_id=s.id,false) FROM servers s CROSS JOIN vpn_preferences v ORDER BY s.created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +230,7 @@ func (s *Store) Servers(ctx context.Context) ([]Server, error) {
 	out := []Server{}
 	for rows.Next() {
 		var v Server
-		if err := rows.Scan(&v.ID, &v.Name, &v.Hostname, &v.SSHPort, &v.SSHUser, &v.Fingerprint, &v.CreatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.Name, &v.Hostname, &v.SSHPort, &v.SSHUser, &v.Fingerprint, &v.CreatedAt, &v.Endpoint, &v.VPNPort, &v.VPNState, &v.VPNError, &v.Default); err != nil {
 			return nil, err
 		}
 		out = append(out, v)

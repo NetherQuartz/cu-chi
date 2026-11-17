@@ -59,6 +59,7 @@ func New(ctx context.Context, cfg config.Config, db *store.Store) (*App, error) 
 }
 func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
+	a.vpnRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { jsonResponse(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -220,6 +221,10 @@ func (a *App) deleteDevice(w http.ResponseWriter, r *http.Request, s store.Sessi
 		return
 	}
 	err := a.db.DeleteDevice(r.Context(), s.User, id)
+	if errors.Is(err, store.ErrConflict) {
+		apiError(w, 409, "Сначала отзовите все профили и дождитесь подтверждения серверов")
+		return
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		apiError(w, 404, "Устройство не найдено")
 		return

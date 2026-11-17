@@ -19,9 +19,17 @@ Go HTTP server, embedded Russian responsive UI, PostgreSQL migrations, OIDC code
 
 GitHub Actions is configured to test with PostgreSQL and publish amd64/arm64 GHCR images. Compose consumes published images; it does not build on the NAS.
 
-## Not implemented / do not imply otherwise
+## VPN implementation (2026-11-17)
 
-No SSH connection, AmneziaWG deployment, key/profile generation, main-server migration, notifications, gateway, WARP or VLESS yet. Registered devices have no VPN profiles, and registered VPSs are not deployed. NAS container startup and Synology administrator login have now passed; ordinary-user login and VPN functionality still need verification.
+Added durable deployment/sync/check jobs, strict pinned SSH, Ubuntu 24.04 amd64 preflight, official-source AWG 3.1 runtime, temporary-peer tunnel/DNS/TLS verification, default server selection and per-device encrypted profile revisions. Users can issue/reissue/download/scan/revoke; deletion waits for confirmed revocation. Offline old-server revocations remain visible. See `docs/vpn-operations.md` for exact behavior and limits.
+
+Application CI now waits for the AWG runtime test/publish job and embeds its immutable digest. The NAS application remains amd64/arm64; the first supported VPS runtime is amd64. This implementation is not yet deployed to the NAS. The current CI run/published digest must be verified after pushing.
+
+Local verification: vet and PostgreSQL race/integration tests cover ownership, encryption, retry identity, stale attempt completion, concurrent revocation, default-server migration and worker restart recovery. SSH tests exercise a real local handshake, host-key mismatch, context cancellation and shell quoting. Three real Docker TUN runs passed encrypted 64 KiB transfers, NAT through a third container, repeated reconciliation and revoked-peer denial. UI registration/deployment form and 390px mobile layout passed; no real VPS deployment was claimed.
+
+Docker Desktop's external TCP path supplied invalid TCP checksums (observed before and after AWG), causing public HTTPS to fail despite internal tunnel/NAT and public DNS working. Do not silently remove the egress test or treat this as a successful external test. CI enables the public DNS/HTTPS check on Ubuntu Linux; every real VPS deployment also requires it. The production runtime contains no diagnostic packet-capture tooling or Desktop-specific workaround.
+
+A dedicated test VPS is being created by the owner; none has been supplied yet. Real VPS provisioning, external inbound UDP and official iOS/Android/Windows/macOS profile import remain acceptance checks. Ordinary Synology user login is also unverified. No Web Push, WARP, local ordinary-WG gateway, VLESS, automatic retirement or grace-period policy exists yet.
 
 ## Verification
 
@@ -43,9 +51,7 @@ No SSH connection, AmneziaWG deployment, key/profile generation, main-server mig
 
 ## Resume
 
-Read AGENTS.md, architecture and roadmap. Next functional slice is durable jobs + strict SSH preflight + one supported AmneziaWG 3.1+ deployment. Keep current security/ownership guarantees. Do not extend inventory deletion to deployed peers until revocation is implemented.
-
-For actual NAS installation, the owner will need to configure the portal HTTPS URL, Synology discovery issuer/client settings and verified group names in a private `.env`. Do not ask them to paste secrets into an issue or commit.
+Read AGENTS.md, architecture and operations. Finish CI/runtime publication and verify anonymous pulls. Update the NAS to the tested application SHA while preserving `.env`, master key and database volume. Then register the owner's fresh VPS using a trusted host fingerprint and dedicated SSH key, deploy it and validate a real client profile. Do not mark those steps complete based on fake-transport API tests or local containers. Infrastructure credentials belong only in private deployment configuration.
 
 ## NAS integration verified (2026-11-17)
 

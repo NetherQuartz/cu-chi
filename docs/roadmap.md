@@ -1,13 +1,13 @@
 # Roadmap
 
-## Foundation (current milestone)
+## Foundation (implemented)
 
 - OIDC and group-based roles.
 - Isolated device inventory, administrator server inventory, encrypted SSH keys.
 - Audit log, migrations, responsive UI, Compose and GitHub CI/GHCR images.
 - Automated authentication, ownership and encryption tests.
 
-## Next: VPS deployment and real profiles
+## VPS deployment and real profiles (implemented, acceptance pending)
 
 1. Add durable jobs and desired/applied state with retries and idempotency.
 2. Implement strict SSH host-key pinning and a connection/preflight check.
@@ -16,8 +16,10 @@
 5. Verify traffic using a temporary unique peer; detect DNS/MTU failures.
 6. Add per-device credentials, server bindings and immutable profile revisions.
 7. Export `.conf` and suitable QR codes tested in current AmneziaWG clients on iOS/Android/Windows/macOS.
-8. Make reissue/withdrawal/expiry durable, auditable operations. Offline-server revocations stay pending visibly.
-9. Add main-server selection and voluntary user migration with a configurable overlap deadline.
+8. Make reissue/withdrawal durable, auditable operations. Offline-server revocations stay pending visibly.
+9. Main-server selection and voluntary user migration are implemented. A configurable overlap deadline remains future work; current reissue immediately queues old-key removal.
+
+Implemented code includes steps 1–8; real VPS/official-client acceptance is still pending. Expiry, configurable grace periods and retirement controls remain future work.
 
 Acceptance: admin registers a VPS and deploys it; a normal user generates two distinct working device profiles; another user cannot access either; reissue/retry creates no duplicates; withdrawal really removes the server peer.
 

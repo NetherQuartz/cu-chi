@@ -2,17 +2,21 @@
 
 Self-hosted family VPN management with Synology SSO, individual device profiles and VPS deployment.
 
-**Status: initial foundation.** Authentication, device inventory, encrypted server credentials and an audit log are implemented. VPN deployment, profile generation and Web Push are not yet implemented. This version does not connect to registered VPSs or create working VPN profiles.
+**Status: VPS/profile implementation under acceptance testing.** Synology login, SSH deployment jobs, pinned AmneziaWG 3.1 runtime and individual profile issuance/revocation are implemented. A fresh real VPS and official client imports are still required for end-to-end acceptance. Web Push is planned.
 
 ## Current functionality
 
 - Synology OIDC login with group-based administrator and user roles.
 - User-scoped device inventory; administrators can see all devices.
 - Administrator-only VPS inventory with encrypted SSH keys and pinned host fingerprints.
+- Semi-automatic Ubuntu 24.04 amd64 deployment, durable retries and main-server selection.
+- Per-device encrypted keys, `.conf`/QR export, reissue and confirmed peer revocation.
 - Session expiration, CSRF protection and a mutation audit log.
 - Russian responsive interface with no separate frontend build step.
 - PostgreSQL migrations and Docker Compose configuration.
 - CI tests and publishes Linux amd64/arm64 images to GHCR.
+
+See [VPS deployment and profile operations](docs/vpn-operations.md) for prerequisites, migration behavior and limits.
 
 ## Install on a NAS
 
@@ -56,7 +60,7 @@ docker compose pull app
 docker compose up -d app
 ```
 
-Keep the previous tag and a database backup. An image rollback is safe only when its code supports the currently applied database schema; future releases must document migration compatibility. Never use `docker compose down -v` during an ordinary update.
+Keep the previous tag and a database backup. Migration 002 adds VPN state. After profiles are issued, do not roll back to an inventory-only version: it cannot revoke their peers. See the [recovery notes](docs/vpn-operations.md#persistence-and-recovery). Never use `docker compose down -v` during an ordinary update.
 
 ## Local development
 

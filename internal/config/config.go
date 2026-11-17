@@ -8,17 +8,24 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/NetherQuartz/cu-chi/internal/deployer"
 )
 
 type Config struct {
 	Listen, PublicURL, DatabaseURL                        string
 	MasterKey                                             []byte
 	DevAuth                                               bool
+	AWGImage                                              string
 	Issuer, ClientID, ClientSecret, AdminGroup, UserGroup string
 }
 
 func Load() (Config, error) {
 	c := Config{Listen: value("CUCHI_LISTEN", "127.0.0.1:8080"), PublicURL: strings.TrimRight(value("CUCHI_PUBLIC_URL", "http://127.0.0.1:8080"), "/"), DatabaseURL: os.Getenv("CUCHI_DATABASE_URL"), DevAuth: os.Getenv("CUCHI_DEV_AUTH") == "true", Issuer: strings.TrimRight(os.Getenv("CUCHI_OIDC_ISSUER"), "/"), ClientID: os.Getenv("CUCHI_OIDC_CLIENT_ID"), ClientSecret: os.Getenv("CUCHI_OIDC_CLIENT_SECRET"), AdminGroup: value("CUCHI_ADMIN_GROUP", "administrators"), UserGroup: value("CUCHI_USER_GROUP", "vpn-users")}
+	c.AWGImage = value("CUCHI_AWG_IMAGE", deployer.RuntimeImage)
+	if c.AWGImage != "" && !deployer.ValidImage(c.AWGImage) {
+		return c, errors.New("CUCHI_AWG_IMAGE must be a pinned official Củ Chi runtime digest")
+	}
 	var err error
 	c.MasterKey, err = base64.StdEncoding.DecodeString(os.Getenv("CUCHI_MASTER_KEY"))
 	if err != nil || len(c.MasterKey) != 32 {

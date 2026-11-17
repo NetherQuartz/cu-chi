@@ -12,8 +12,11 @@ import (
 	"time"
 
 	"github.com/NetherQuartz/cu-chi/internal/config"
+	"github.com/NetherQuartz/cu-chi/internal/cryptobox"
+	"github.com/NetherQuartz/cu-chi/internal/deployer"
 	"github.com/NetherQuartz/cu-chi/internal/httpapp"
 	"github.com/NetherQuartz/cu-chi/internal/store"
+	"github.com/NetherQuartz/cu-chi/internal/worker"
 )
 
 func main() {
@@ -56,6 +59,12 @@ func run() error {
 		return errors.New("database startup failed; check connection and migration state")
 	}
 	defer db.Pool.Close()
+	box, _ := cryptobox.New(cfg.MasterKey)
+	vpnWorker := worker.Worker{DB: db, Box: box, Remote: deployer.SSH{}, Image: cfg.AWGImage}
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	workerDone := make(chan struct{})
+	go func() { defer close(workerDone); vpnWorker.Run(workerCtx) }()
+	defer func() { stopWorker(); <-workerDone }()
 	app, err := httpapp.New(startup, cfg, db)
 	if err != nil {
 		return err

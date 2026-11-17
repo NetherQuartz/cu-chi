@@ -2,15 +2,15 @@
 
 ## Deployment boundaries
 
-The NAS hosts the control plane: web application, PostgreSQL, future background jobs and Web Push sender. Synology SSO Server remains the identity provider. External VPSs host the VPN data plane. A local Linux gateway may later bridge ordinary WireGuard from a Keenetic router to AmneziaWG on a VPS.
+The NAS hosts the control plane: web application, PostgreSQL, background jobs and Web Push sender. Synology SSO Server remains the identity provider. External VPSs host the VPN data plane. A local Linux gateway may later bridge ordinary WireGuard from a Keenetic router to AmneziaWG on a VPS.
 
 Existing external VPN connections must not depend on portal availability. The local gateway must continue using its last applied configuration if the portal stops. Control-plane routes must remain independent of the VPN they repair.
 
 ## Technology choice
 
-Go keeps the API, embedded frontend and future deployment worker in one distributable binary. The project uses standard-library HTTP routing and established OIDC/OAuth, PostgreSQL and SSH libraries. This choice favors a compact NAS installation and networking automation; throughput is not the deciding factor at family scale. Django would provide more built-in CRUD/admin functionality. The owner asked for the rationale; no alternative stack was requested.
+Go keeps the API, embedded frontend and deployment worker in one distributable binary. The project uses standard-library HTTP routing and established OIDC/OAuth, PostgreSQL and SSH libraries. This choice favors a compact NAS installation and networking automation; throughput is not the deciding factor at family scale. Django would provide more built-in CRUD/admin functionality. The owner asked for the rationale; no alternative stack was requested.
 
-The current UI is HTML/CSS/JavaScript embedded in the binary. A future frontend framework can replace it without changing the protocol or ownership model. PostgreSQL holds durable state and will also support a transactional job queue; Redis is not required for the initial scope.
+The current UI is HTML/CSS/JavaScript embedded in the binary. A future frontend framework can replace it without changing the protocol or ownership model. PostgreSQL holds durable state and a transactional job queue; Redis is not required for the initial scope.
 
 ## Identity and authorization
 
@@ -30,27 +30,23 @@ Actual Synology discovery and the administrator browser login have been validate
 
 The 32-byte base64 master key is loaded from environment. SSH private keys are encrypted with AES-256-GCM using a new nonce and server-ID-associated data. Key material is never returned by list APIs, recorded in audit events or emitted to logs. This protects backups at rest, not a compromised running NAS.
 
-Current SSH input accepts a dedicated private key without a passphrase; the database encrypts it at rest. The fingerprint is supplied from a trusted provider console. Actual SSH host-key verification must be implemented before any connection or deployment command is added. Do not use `InsecureIgnoreHostKey`.
+Current SSH input accepts a dedicated private key without a passphrase; the database encrypts it at rest. The fingerprint is supplied from a trusted provider console. SSH connections verify this pinned fingerprint before authentication and commands. Do not use `InsecureIgnoreHostKey`.
 
 Audits record actor, action, resource ID and timestamp in the same transaction as the mutation. They do not record request payloads. All responses are `Cache-Control: no-store`; a future PWA service worker must never cache authenticated APIs, profile downloads or secrets.
 
 Master-key rotation, encrypted backups and restore exercises remain future work. Preserve the original master key across container updates.
 
-## Current data model
+## VPN state and worker
 
-`users`, `sessions`, `login_attempts`, `devices`, `servers`, `audit_events`, `schema_migrations`.
+The foundation tables are joined by `profiles`, `jobs` and the singleton `vpn_preferences`. Server settings and per-profile private keys/PSKs use the same encrypted store, with separate associated-data namespaces. Profiles have immutable revisions, unique public keys and unique monotonically allocated IPv4 addresses per server. Only one revision per device is desired at a time.
 
-Devices are inventory entries, not active VPN peers. Servers are registered SSH targets, not deployed VPN services. Current deletion removes only inventory because there are no actual peers yet. This endpoint must become an orchestrated revocation operation before profiles are introduced.
+Mutations and job enqueueing share short PostgreSQL transactions. A single worker owns a session advisory lock; SSH runs outside transactions. A restart recovers unfinished work. Jobs merge queued changes per server, retry up to three attempts and carry an attempt token to reject late results. The worker sends a consistent desired-state snapshot. Remote `flock` plus a persisted generation fence prevent an old operation from overwriting a newer snapshot.
 
-SQL migrations are embedded, ordered, checksummed and applied transactionally under an advisory lock. Applied files cannot be edited. Add new migrations for future schema changes.
+A profile becomes downloadable only after applying and verifying the peer. Concurrent revocation cannot be undone by completion of an older snapshot. A device cannot be deleted until all remaining peers are confirmed removed. Re-download preserves keys; reissue allocates new credentials, queues old-peer removal and new-peer installation. Selecting the default server alone changes no existing profile. There is no grace period in this slice; old-server revocation can remain pending while a new-server profile becomes ready.
 
-## Next data model and worker
+The deployment adapter supports a dedicated Ubuntu 24.04 amd64 VPS with root or passwordless sudo and TUN. It installs Docker if absent and runs an official-source, version/digest-pinned AmneziaWG 3.1 userspace image. IPv4 NAT runs inside a dedicated container namespace; Docker publishes the selected UDP port. The NAS never needs a Docker socket or networking capabilities. A temporary peer verifies tunnel traffic, DNS and HTTPS egress before readiness. This does not verify inbound UDP through the provider firewall or connectivity from a censored client network.
 
-Add protocol services, encrypted per-device credentials, profile revisions, desired/applied state, jobs and job attempts. Use a transactional outbox/queue for deployment and revocation. A retry must not create extra peers; reserve identities once and reconcile intended state. Lock per device/server where needed. Do not mark a profile ready until it is applied and verified on the target.
-
-A device can have distinct bindings for old/new servers during migration. A re-download returns the same revision. Explicit reissue creates fresh credentials. Compromise revocation and routine migration have different overlap policies. Devices behind one routed gateway do not each need the gateway's private key.
-
-The initial deployer will use SSH, a pinned supported OS/runtime and versioned idempotent scripts. Use official AmneziaWG 3.1+ userspace tools; pin tested source revisions and validate obfuscation settings. Deployments must test tunnel traffic and DNS, not just process state or handshakes. No raw scripts accepted from user input.
+SQL migrations remain embedded, ordered, checksummed and applied transactionally under an advisory lock. Applied migrations are immutable. See [operations and recovery](vpn-operations.md) for runtime source pins and rollback limits.
 
 ## Notifications and extensions
 

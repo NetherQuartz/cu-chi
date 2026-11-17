@@ -1,9 +1,9 @@
 'use strict';
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { me: null, view: 'devices', devices: [], servers: [], deleting: null };
+const state = { me: null, view: 'devices', devices: [], servers: [], deleting: null, profiles: [], vpn: {}, jobs: [], deploying: null, profileAction: null, loading: false };
 const platforms = { ios: 'iOS / iPadOS', android: 'Android', windows: 'Windows', macos: 'macOS', gateway: 'Домашний шлюз' };
-const actions = { 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
+const actions = { 'profile.issued':'Профиль запрошен', 'profile.revocation_requested':'Запрошен отзыв профилей', 'server.check_queued':'Запрошена проверка SSH', 'server.deploy_queued':'Запрошен деплой', 'server.default_changed':'Основной сервер изменён', 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
 let toastTimer;
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 function notify(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4000); }
@@ -39,7 +39,7 @@ async function start() {
  finally { $('#loading').hidden = true; }
 }
 async function loadDevices() {
- state.devices = await api('/api/devices');
+ [state.devices,state.profiles,state.vpn] = await Promise.all([api('/api/devices'),api('/api/profiles'),api('/api/vpn')]);
  const container = $('#devices'); container.replaceChildren();
  $('#device-empty').hidden = state.devices.length > 0;
  $('#device-count').textContent = state.devices.length; $('#nav-count').textContent = state.devices.length;
@@ -49,16 +49,45 @@ async function loadDevices() {
   const card = node('article', 'device-card'); const top = node('div', 'card-top');
   const icon = node('span', 'platform-icon', ['ios', 'android'].includes(device.platform) ? '▯' : '▱'); icon.setAttribute('aria-hidden', 'true');
   const remove = node('button', 'icon-button', '×'); remove.setAttribute('aria-label', `Удалить ${device.name}`);
-  remove.addEventListener('click', () => { state.deleting = device.id; $('#delete-description').textContent = `Запись «${device.name}» будет удалена из кабинета. VPN-профиль для неё ещё не выпускался.`; openDialog('delete'); });
+  remove.addEventListener('click', () => { state.deleting = device.id; $('#delete-description').textContent = `Запись «${device.name}» будет удалена. Сначала отзовите выпущенные профили и дождитесь подтверждения всех серверов.`; openDialog('delete'); });
   top.append(icon, remove); card.append(top, node('h3', '', device.name), node('p', 'platform', platforms[device.platform]));
-  const meta = node('div', 'device-meta'); meta.append(node('span', '', device.owner), node('span', 'badge', 'Профиль не выпущен')); card.append(meta); container.append(card);
+  const profiles = state.profiles.filter(p => p.device_id === device.id);
+  const current = profiles.find(p => p.desired);
+  const meta = node('div', 'device-meta'); meta.append(node('span', '', device.owner), node('span', 'badge', current ? (current.state === 'ready' ? 'Профиль готов' : 'Применяется на сервере') : 'Профиль не выпущен')); card.append(meta);
+  if (profiles.some(p=>p.needs_attention)) card.append(node('p','form-error','Не удалось применить изменения. Администратору нужно проверить сервер.'));
+  if (current) card.append(node('p', 'small muted', `${current.server_name} · версия ${current.revision}`));
+  if (profiles.some(p => p.state === 'revoking')) card.append(node('p','form-error','Отзыв старых ключей ещё не подтверждён сервером.'));
+  const controls = node('div','card-actions');
+  if (current?.state === 'ready') {
+   const download=node('a','button secondary','Скачать .conf'); download.href=`/api/profiles/${current.id}/download`; controls.append(download);
+   const qr=node('button','button secondary','QR'); qr.addEventListener('click',()=>{ $('#profile-qr').src=`/api/profiles/${current.id}/qr`; $('#qr-dialog').showModal(); }); controls.append(qr);
+  }
+  const issue=node('button','button secondary',current?'Перевыпустить':'Выпустить профиль'); issue.disabled=!state.vpn.available || current?.state==='pending';
+  issue.addEventListener('click',()=>confirmProfile(device,'issue')); controls.append(issue);
+  if (profiles.length) { const revoke=node('button','button secondary','Отозвать'); revoke.addEventListener('click',()=>confirmProfile(device,'revoke')); controls.append(revoke); }
+  if (!state.vpn.available) card.append(node('p','small muted','Администратор должен выбрать готовый основной сервер.'));
+  card.append(controls); container.append(card);
  }
 }
 async function loadServers() {
- state.servers = await api('/api/admin/servers'); const container = $('#servers'); container.replaceChildren(); $('#server-empty').hidden = state.servers.length > 0;
+ [state.servers,state.jobs] = await Promise.all([api('/api/admin/servers'),api('/api/admin/jobs')]); const container = $('#servers'); container.replaceChildren(); $('#server-empty').hidden = state.servers.length > 0;
  for (const server of state.servers) {
-  const card = node('article', 'server-card'); const top = node('div', 'card-top'); top.append(node('h3', '', server.name), node('span', 'badge', 'Не развёрнут'));
-  card.append(top, node('p', 'server-address', `${server.ssh_user}@${server.hostname}:${server.ssh_port}`), node('p', 'server-address', server.host_key_fingerprint)); container.append(card);
+  const card=node('article','server-card'); const top=node('div','card-top');
+  const names={new:'Не развёрнут',checked:'SSH проверен',deploying:'Разворачивается',ready:'Развёрнут'};
+  top.append(node('h3','',server.name),node('span','badge',server.is_default?'Основной сервер':(names[server.vpn_state]||server.vpn_state)));
+  card.append(top,node('p','server-address',`${server.ssh_user}@${server.hostname}:${server.ssh_port}`));
+  if(server.endpoint) card.append(node('p','small muted',`${server.endpoint}:${server.vpn_port}/udp · AmneziaWG 3.1`));
+  const job=state.jobs.find(j=>j.server_id===server.id);
+  const busy=state.jobs.some(j=>j.server_id===server.id&&['queued','running'].includes(j.status));
+  if(job) {const labels={queued:'В очереди',running:'Выполняется',succeeded:'Выполнено',failed:'Ошибка'};card.append(node('p','small muted',`${labels[job.status]} · попытка ${job.attempts}`));}
+  if(server.vpn_error)card.append(node('p','form-error',server.vpn_error));
+  const controls=node('div','card-actions');
+  const check=node('button','button secondary','Проверить SSH');check.disabled=busy;check.addEventListener('click',()=>serverAction(server.id,'check'));controls.append(check);
+  const deploy=node('button','button secondary',server.vpn_state==='ready'?'Повторить применение':'Развернуть');deploy.disabled=busy;deploy.addEventListener('click',()=>{
+   state.deploying=server.id;const form=$('#deploy-form');form.elements.endpoint.value=server.endpoint||server.hostname;form.elements.port.value=server.vpn_port||51820;form.elements.endpoint.readOnly=!!server.endpoint;form.elements.port.readOnly=!!server.endpoint;openDialog('deploy');
+  });controls.append(deploy);
+  if(server.vpn_state==='ready'&&!server.is_default){const main=node('button','button primary','Сделать основным');main.addEventListener('click',()=>serverAction(server.id,'default'));controls.append(main);}
+  card.append(controls);container.append(card);
  }
 }
 async function loadEvents() {
@@ -76,8 +105,9 @@ async function changeView(view) {
  for (const name of ['devices', 'servers', 'events']) $(`#${name}-view`).hidden = name !== view;
  $$('[data-view]').forEach(el => el.classList.toggle('active', el.dataset.view === view));
  $('#page-error').hidden = true;
+ state.loading=true;
  try { await ({ devices: loadDevices, servers: loadServers, events: loadEvents }[view])(); }
- catch (error) { $('#page-error').textContent = error.message; $('#page-error').hidden = false; }
+ catch (error) { $('#page-error').textContent = error.message; $('#page-error').hidden = false; } finally {state.loading=false;}
 }
 function openDialog(name) { const dialog = $(`#${name}-dialog`); $('.form-error', dialog).textContent = ''; dialog.showModal(); }
 function bindForm(name, handler) {
@@ -96,4 +126,14 @@ $('#dev-login').addEventListener('click', async event => { event.currentTarget.d
 bindForm('device', async form => { await api('/api/devices', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form))) }); $('#device-dialog').close(); form.reset(); await loadDevices(); notify('Устройство добавлено'); });
 bindForm('server', async form => { const data = Object.fromEntries(new FormData(form)); data.ssh_port = Number(data.ssh_port); await api('/api/admin/servers', { method: 'POST', body: JSON.stringify(data) }); $('#server-dialog').close(); form.reset(); await loadServers(); notify('Сервер сохранён'); });
 bindForm('delete', async () => { await api(`/api/devices/${state.deleting}`, { method: 'DELETE' }); $('#delete-dialog').close(); state.deleting = null; await loadDevices(); notify('Устройство удалено'); });
+function confirmProfile(device,action){
+ state.profileAction={device,action}; $('#profile-title').textContent=action==='issue'?'Выпустить новый профиль?':'Отозвать профили?';
+ $('#profile-description').textContent=action==='issue'?`Устройство «${device.name}», сервер «${state.vpn.server_name}». Старые ключи будут отозваны. После завершения импортируйте новый профиль в AmneziaWG; одно устройство — один профиль.`:`Ключи устройства «${device.name}» будут удалены со всех серверов. Недоступные серверы останутся в ожидании отзыва.`;
+ openDialog('profile');
+}
+async function serverAction(id,action){try{await api(`/api/admin/servers/${id}/${action}`,{method:'POST'});await loadServers();notify(action==='default'?'Основной сервер изменён':'Задание поставлено в очередь');}catch(e){notify(e.message);}}
+bindForm('deploy',async form=>{const input=Object.fromEntries(new FormData(form));input.port=Number(input.port);await api(`/api/admin/servers/${state.deploying}/deploy`,{method:'POST',body:JSON.stringify(input)});$('#deploy-dialog').close();await loadServers();notify('Деплой поставлен в очередь');});
+bindForm('profile',async()=>{const {device,action}=state.profileAction;await api(`/api/devices/${device.id}/${action==='issue'?'profiles':'revoke'}`,{method:'POST'});$('#profile-dialog').close();await loadDevices();notify('Задание поставлено в очередь');});
+$('#qr-dialog').addEventListener('close',()=>$('#profile-qr').removeAttribute('src'));
+setInterval(async()=>{if(!state.me||state.loading||document.hidden||$('dialog[open]'))return;state.loading=true;try{if(state.view==='servers')await loadServers();if(state.view==='devices')await loadDevices();}catch(e){$('#page-error').textContent=e.message;$('#page-error').hidden=false;}finally{state.loading=false;}},5000);
 start();
