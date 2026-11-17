@@ -18,7 +18,12 @@ var gatewayImageRE = regexp.MustCompile(`^ghcr\.io/netherquartz/cu-chi-gateway@s
 func ValidGatewayImage(image string) bool { return gatewayImageRE.MatchString(image) }
 
 //go:embed gateway.sh
-var gatewayApply string
+var gatewayApplyBody string
+
+//go:embed gateway-health.sh
+var gatewayHealthWait string
+
+var gatewayApply = gatewayHealthWait + "\n" + gatewayApplyBody
 
 type GatewayPayload struct {
 	ID, Image, LANIP, RouterIP, Uplink, LAN string

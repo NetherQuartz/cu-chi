@@ -16,7 +16,7 @@ async function loadGateways(){
   else card.append(node('p','small muted','Сначала выпустите отдельный профиль шлюза на основном VPS.'));
   if(g.applied_profile_id && g.applied_profile_id!==g.current_profile_id)card.append(node('p','form-error','На VM остался прежний профиль. Примените текущий профиль после его готовности.'));
   if(g.applied_at)card.append(node('p','small muted',`Туннель, DNS и HTTPS проверены при последнем успешном применении: ${dateLabel(g.applied_at)}. Это не текущий статус Keenetic.`));
-  if(g.error)card.append(node('p','form-error',g.error));
+  if(g.error){const errors={gateway_dns_failed:'Не удалось получить ответ DNS через VPN после повторных проверок. Проверьте доступность VPS.',gateway_https_failed:'DNS через VPN работает, но HTTPS-проверка не прошла после повторных попыток.',gateway_egress_failed:'Не прошла проверка выхода в интернет через VPN.',runtime_start_failed:'Контейнер шлюза не подтвердил готовность. Проверьте его запуск на VM.'};card.append(node('p','form-error',errors[g.error]||g.error));}
   if(busy)card.append(node('p','small muted',`Попытка ${g.attempts} из 3`));
   const controls=node('div','card-actions');
   const check=node('button','button secondary','Проверить SSH');check.disabled=busy;check.addEventListener('click',()=>gatewayAction(g.id,'check'));controls.append(check);

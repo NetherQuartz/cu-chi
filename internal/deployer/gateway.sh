@@ -49,5 +49,5 @@ for i in $(seq 1 30); do
  sleep 1
 done
 [ "$ready" = true ] || { echo CUCHI_ERROR_runtime_start_failed; exit 18; }
-docker exec cuchi-gateway /usr/local/bin/cuchi-gateway-healthcheck >/dev/null || { echo CUCHI_ERROR_gateway_egress_failed; exit 23; }
+wait_for_gateway_egress || exit 23
 printf 'CUCHI_GATEWAY_OK\n'
