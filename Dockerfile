@@ -15,6 +15,7 @@ FROM scratch
 LABEL org.opencontainers.image.source="https://github.com/NetherQuartz/cu-chi"
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/cuchi /cuchi
+COPY THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/cuchi"]

@@ -2,7 +2,7 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = { me: null, view: 'devices', devices: [], servers: [], deleting: null, profiles: [], vpn: {}, jobs: [], sshKeys: [], deploying: null, profileAction: null, loading: false };
-const platforms = { ios: 'iOS / iPadOS', android: 'Android', windows: 'Windows', macos: 'macOS', gateway: 'Домашний шлюз' };
+const platforms = { ios: 'iOS / iPadOS', android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux', gateway: 'Домашний шлюз' };
 const actions = { 'ssh_key.created':'SSH-ключ сохранён', 'ssh_key.deleted':'SSH-ключ удалён', 'profile.issued':'Профиль запрошен', 'profile.revocation_requested':'Запрошен отзыв профилей', 'server.check_queued':'Запрошена проверка SSH', 'server.deploy_queued':'Запрошен деплой', 'server.default_changed':'Основной сервер изменён', 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
 let toastTimer, renderedSSHKeys;
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
@@ -47,7 +47,7 @@ async function loadDevices() {
  $('#device-summary').textContent = `${state.devices.length} всего`;
  for (const device of state.devices) {
   const card = node('article', 'device-card'); const top = node('div', 'card-top');
-  const icon = node('span', 'platform-icon', ['ios', 'android'].includes(device.platform) ? '▯' : '▱'); icon.setAttribute('aria-hidden', 'true');
+  const icon = node('span', 'platform-icon'); icon.setAttribute('aria-hidden', 'true'); icon.append(node('span', `os-logo os-${Object.hasOwn(platforms,device.platform)?device.platform:'gateway'}`));
   const remove = node('button', 'icon-button', '×'); remove.setAttribute('aria-label', `Удалить ${device.name}`);
   remove.addEventListener('click', () => { state.deleting = device.id; $('#delete-description').textContent = `Запись «${device.name}» будет удалена. Сначала отзовите выпущенные профили и дождитесь подтверждения всех серверов.`; openDialog('delete'); });
   top.append(icon, remove); card.append(top, node('h3', '', device.name), node('p', 'platform', platforms[device.platform]));

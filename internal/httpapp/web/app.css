@@ -39,3 +39,11 @@
  dialog::backdrop{background:#000b}.loading{background:#000;color:#d6e8d5}
  #profile-qr{background:#fff}
 }
+
+.os-logo{display:block;width:28px;height:28px;background:currentColor;-webkit-mask-position:center;mask-position:center;-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+.os-ios{-webkit-mask-image:url(/platform-ios.svg);mask-image:url(/platform-ios.svg)}
+.os-android{-webkit-mask-image:url(/platform-android.svg);mask-image:url(/platform-android.svg)}
+.os-windows{-webkit-mask-image:url(/platform-windows.svg);mask-image:url(/platform-windows.svg)}
+.os-macos{-webkit-mask-image:url(/platform-macos.svg);mask-image:url(/platform-macos.svg)}
+.os-linux{-webkit-mask-image:url(/platform-linux.svg);mask-image:url(/platform-linux.svg)}
+.os-gateway{-webkit-mask-image:url(/platform-gateway.svg);mask-image:url(/platform-gateway.svg)}

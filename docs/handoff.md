@@ -99,3 +99,5 @@ The owner noticed repeated logouts. A freshly authenticated production session h
 System-following dark mode was requested, explicitly AMOLED: the page canvas uses #000000 while subtly lighter dark cards preserve readability. The owner clarified that making every surface black was not requested. The browser preview can force only the dark CSS branch locally for visual inspection without changing the owner's OS preference.
 
 DSM requires the backup bind directory to exist before container startup. The File Station-created directory also belongs to a NAS user; the backup service now has only CHOWN in addition to dropped capabilities, initializes the backup directory's root ownership and mode 700. The integration test reproduces the non-root-owned directory and checks restore/retention. Full NAS backup verification is still pending.
+
+OS-specific icons are now vendored SVGs (Tabler, plus Simple Icons Linux/Tux), with license notices in the repository and container image. Linux is a first-class user device platform through migration 005. External icon CDNs/fonts are not used.

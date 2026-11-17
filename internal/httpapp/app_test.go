@@ -350,3 +350,16 @@ func TestOIDCLoginVerification(t *testing.T) {
 func Example_roleFor() {
 	fmt.Println(roleFor([]string{"vpn-users"}, "administrators", "vpn-users")) // Output: user
 }
+
+func TestLinuxDeviceAndPlatformAssets(t *testing.T) {
+	a := testApp(t)
+	user := account(t, a, "user")
+	requireStatus(t, request(a, "POST", "/api/devices", user, `{"name":"Linux laptop","platform":"linux"}`), 201)
+	for _, platform := range []string{"ios", "android", "windows", "macos", "linux", "gateway"} {
+		w := request(a, "GET", "/platform-"+platform+".svg", identity{}, "")
+		requireStatus(t, w, 200)
+		if !strings.Contains(w.Body.String(), "<svg") || !strings.Contains(w.Header().Get("Content-Type"), "svg") {
+			t.Fatal("missing platform asset")
+		}
+	}
+}

@@ -132,7 +132,7 @@ func (a *App) Handler() http.Handler {
 	}))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { apiError(w, 404, "Не найдено") })
 	assets, _ := fs.Sub(web, "web")
-	for _, path := range []string{"/{$}", "/app.js", "/app.css", "/icon.svg"} {
+	for _, path := range []string{"/{$}", "/app.js", "/app.css", "/icon.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
 		mux.Handle("GET "+path, http.FileServerFS(assets))
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +207,7 @@ func (a *App) createDevice(w http.ResponseWriter, r *http.Request, s store.Sessi
 		return
 	}
 	switch v.Platform {
-	case "ios", "android", "windows", "macos":
+	case "ios", "android", "windows", "macos", "linux":
 	case "gateway":
 		if s.User.Role != "admin" {
 			apiError(w, 403, "Шлюзы добавляет администратор")
