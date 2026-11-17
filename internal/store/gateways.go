@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/NetherQuartz/cu-chi/internal/cryptobox"
@@ -110,6 +111,9 @@ func (s *Store) QueueGateway(ctx context.Context, u User, id, kind string) error
 	if err != nil {
 		return err
 	}
+	if _, err = tx.Exec(ctx, `UPDATE notifications SET expires_at=LEAST(expires_at,now()) WHERE gateway_id=$1`, id); err != nil {
+		return err
+	}
 	if err = audit(ctx, tx, u.ID, "gateway."+kind+"_queued", id); err != nil {
 		return err
 	}
@@ -160,9 +164,14 @@ func (s *Store) FinishGateway(ctx context.Context, g Gateway, failure string) er
 			state = "queued"
 		}
 	}
-	_, err = tx.Exec(ctx, `UPDATE gateways SET state=$4,error=$5,run_after=now()+interval '30 seconds',applied_profile_id=CASE WHEN $4='ready' THEN desired_profile_id ELSE applied_profile_id END,applied_at=CASE WHEN $4='ready' THEN now() ELSE applied_at END WHERE id=$1 AND generation=$2 AND run_token=$3 AND state='running'`, g.ID, g.Generation, g.RunToken, state, failure)
+	result, err := tx.Exec(ctx, `UPDATE gateways SET state=$4,error=$5,run_after=now()+interval '30 seconds',applied_profile_id=CASE WHEN $4='ready' THEN desired_profile_id ELSE applied_profile_id END,applied_at=CASE WHEN $4='ready' THEN now() ELSE applied_at END WHERE id=$1 AND generation=$2 AND run_token=$3 AND state='running'`, g.ID, g.Generation, g.RunToken, state, failure)
 	if err != nil {
 		return err
+	}
+	if result.RowsAffected() == 1 && state == "failed" {
+		if _, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,gateway_id) SELECT id,$1,'job_failed','warning',$2 FROM users WHERE role='admin' ON CONFLICT DO NOTHING`, fmt.Sprintf("gateway:%s:%d", g.ID, g.Generation), g.ID); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }

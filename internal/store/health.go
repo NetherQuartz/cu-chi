@@ -160,6 +160,7 @@ func (s *Store) Maintenance(ctx context.Context, u User, id string, minutes int)
 }
 
 type Notification struct {
+	GatewayID  string     `json:"gateway_id,omitempty"`
 	ID         string     `json:"id"`
 	Kind       string     `json:"kind"`
 	Severity   string     `json:"severity"`
@@ -169,7 +170,7 @@ type Notification struct {
 }
 
 func (s *Store) Inbox(ctx context.Context, u User) ([]Notification, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT n.id::text,n.kind,n.severity,COALESCE(s.name,''),n.created_at,n.read_at FROM notifications n LEFT JOIN servers s ON s.id=n.server_id WHERE n.user_id=$1 AND ($2 OR n.kind NOT IN ('management','job_failed')) ORDER BY n.created_at DESC LIMIT 100`, u.ID, u.Role == "admin")
+	rows, err := s.Pool.Query(ctx, `SELECT n.id::text,n.kind,n.severity,COALESCE(s.name,g.name,''),n.created_at,n.read_at,COALESCE(n.gateway_id::text,'') FROM notifications n LEFT JOIN servers s ON s.id=n.server_id LEFT JOIN gateways g ON g.id=n.gateway_id WHERE n.user_id=$1 AND ($2 OR n.kind NOT IN ('management','job_failed')) ORDER BY n.created_at DESC LIMIT 100`, u.ID, u.Role == "admin")
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +178,7 @@ func (s *Store) Inbox(ctx context.Context, u User) ([]Notification, error) {
 	out := []Notification{}
 	for rows.Next() {
 		var n Notification
-		if err = rows.Scan(&n.ID, &n.Kind, &n.Severity, &n.ServerName, &n.CreatedAt, &n.ReadAt); err != nil {
+		if err = rows.Scan(&n.ID, &n.Kind, &n.Severity, &n.ServerName, &n.CreatedAt, &n.ReadAt, &n.GatewayID); err != nil {
 			return nil, err
 		}
 		out = append(out, n)

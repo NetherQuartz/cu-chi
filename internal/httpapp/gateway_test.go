@@ -118,6 +118,56 @@ func TestGatewayLifecycleAndIsolation(t *testing.T) {
 		t.Fatal("revoked profile applied")
 	}
 	requireStatus(t, request(a, "DELETE", "/api/devices/"+g.DeviceID, admin, ""), 409)
+	// Retry exhaustion creates one admin-only alert; stale/duplicate finishes do not.
+	for attempt := 2; attempt <= 3; attempt++ {
+		if _, err = a.db.Pool.Exec(ctx, `UPDATE gateways SET run_after=now() WHERE id=$1`, g.ID); err != nil {
+			t.Fatal(err)
+		}
+		retry, e := a.db.ClaimGateway(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if retry.Attempts != attempt {
+			t.Fatal("wrong retry count")
+		}
+		if e = a.db.FinishGateway(ctx, retry, "fixture gateway offline"); e != nil {
+			t.Fatal(e)
+		}
+		if e = a.db.FinishGateway(ctx, retry, "fixture gateway offline"); e != nil {
+			t.Fatal(e)
+		}
+	}
+	notices, e := a.db.Inbox(ctx, admin.user)
+	if e != nil {
+		t.Fatal(e)
+	}
+	count := 0
+	for _, n := range notices {
+		if n.GatewayID == g.ID {
+			count++
+			if n.Kind != "job_failed" {
+				t.Fatal("wrong gateway notice")
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("gateway alert count %d", count)
+	}
+	userNotices, e := a.db.Inbox(ctx, normal.user)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, n := range userNotices {
+		if n.GatewayID != "" {
+			t.Fatal("gateway alert leaked to user")
+		}
+	}
+	requireStatus(t, request(a, "POST", path+"/check", admin, ""), 202)
+	var unexpired int
+	if e = a.db.Pool.QueryRow(ctx, `SELECT count(*) FROM notifications WHERE gateway_id=$1 AND expires_at>now()`, g.ID).Scan(&unexpired); e != nil || unexpired != 0 {
+		t.Fatal("old alert still deliverable after retry")
+	}
+
 	// Saved-key linkage is protected by the FK and counted in inventory.
 	keyID := cryptobox.ID()
 	_, err = a.db.CreateSSHKey(ctx, admin.user, store.SSHKey{ID: keyID, Name: "Gateway key", PublicKey: "public", Fingerprint: "fingerprint"}, []byte("encrypted fixture"))

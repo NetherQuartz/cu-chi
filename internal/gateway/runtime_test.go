@@ -107,13 +107,15 @@ ip route add "$1/32" dev wg0
 ip route add 1.1.1.1/32 dev wg0`, "--", target)
 	transfer := func(source string) {
 		t.Helper()
-		data := run("exec", client, "curl", "--interface", source, "--fail", "--silent", "--show-error", "--retry", "2", "--max-time", "8", "http://"+target+":9090/payload")
-		if len(data) != 131072 {
+		run("exec", client, "curl", "--interface", source, "--fail", "--silent", "--show-error", "--retry", "2", "--max-time", "8", "--output", "/tmp/transfer", "http://"+target+":9090/payload")
+		data := run("exec", client, "cat", "/tmp/transfer")
+		if data != strings.Repeat("x", 131072) {
 			t.Fatalf("large transfer: %d bytes", len(data))
 		}
 	}
 	transfer("10.77.0.2")
 	transfer("192.168.55.9")
+	t.Log("WG -> AWG large transfers passed with router-NAT and routed LAN source")
 	if !strings.Contains(run("exec", bridge, "ip", "route", "get", "1.1.1.1"), "dev eth0") {
 		t.Fatal("management routing changed")
 	}
@@ -127,6 +129,7 @@ ip route add 1.1.1.1/32 dev wg0`, "--", target)
 		}
 		run("exec", client, "curl", "--interface", "10.77.0.2", "--fail", "--silent", "--show-error", "--max-time", "20", "https://1.1.1.1/cdn-cgi/trace")
 		run("exec", bridge, "/usr/local/bin/cuchi-gateway-healthcheck")
+		t.Log("DNS and HTTPS passed through both tunnels and gateway healthcheck")
 	}
 	deny := func() {
 		t.Helper()
@@ -141,6 +144,7 @@ ip route add 1.1.1.1/32 dev wg0`, "--", target)
 	run("exec", bridge, "pkill", "-STOP", "-x", "amneziawg-go")
 	run("exec", bridge, "ip", "link", "del", "awg0")
 	deny()
+	t.Log("Fail-closed passed with absent peer and removed AWG interface")
 	// The namespace may now stop with the AWG process; restarting restores it.
 	run("restart", bridge)
 	waitReady(bridge, "/run/cuchi-gateway-ready")
