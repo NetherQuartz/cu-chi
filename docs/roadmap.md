@@ -63,4 +63,4 @@ Implemented: periodic isolated AWG DNS/HTTPS probe, debounced incidents/recovery
 
 ## Local gateway implementation in progress
 
-The owner confirmed VMM support and chose fail-closed. Implementing an administrator-managed Ubuntu VM registered/deployed by password or saved SSH key from the portal, stable LAN WireGuard identity, independent AWG profile, profile-drift display and CI packet tests. See [local gateway](local-gateway.md). Runtime/CI passed at `f72d313`; desktop/mobile interactive UI acceptance passed; real VM/Keenetic acceptance is still pending.
+The owner confirmed VMM support and chose fail-closed. Implementing an administrator-managed Ubuntu VM registered/deployed by password or saved SSH key from the portal, stable LAN WireGuard identity, independent AWG profile, profile-drift display and CI packet tests. See [local gateway](local-gateway.md). Runtime/CI passed at `f72d313`; desktop/mobile interactive UI acceptance passed; real VM deployment/DNS/HTTPS passed after the cold-start fix; Keenetic household routing acceptance remains pending.
