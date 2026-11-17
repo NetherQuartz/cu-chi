@@ -73,7 +73,7 @@ func TestGatewayPacketsAndFailClosed(t *testing.T) {
 		t.Fatalf("%s did not become ready", c)
 	}
 	waitReady(server, "/run/cuchi-ready")
-	run(append(append([]string{}, base...), "--name", client, "--entrypoint", "sleep", image, "600")...)
+	run(append(append([]string{}, base...), "--name", client, "-v", dir+":/config:ro", "--entrypoint", "sleep", image, "600")...)
 	run("run", "-d", "--network", prefix, "--name", egress, "--cap-drop", "ALL", "--read-only", "-v", dir+":/config:ro", "--entrypoint", "httpd", serverImage, "-f", "-p", "9090", "-h", "/config")
 	target := ip(egress)
 	lan, err := NewLAN("192.168.50.10", ip(client), "192.168.55.0/24")
@@ -97,9 +97,9 @@ func TestGatewayPacketsAndFailClosed(t *testing.T) {
 		lines = append(lines, line)
 	}
 	write("client.conf", strings.Join(lines, "\n"))
-	run("cp", filepath.Join(dir, "client.conf"), client+":/run/wg.conf")
+
 	run("exec", client, "sh", "-ec", `ip link add wg0 type wireguard
-wg setconf wg0 /run/wg.conf
+wg setconf wg0 /config/client.conf
 ip addr add 10.77.0.2/32 dev wg0
 ip addr add 192.168.55.9/32 dev lo
 ip link set wg0 mtu 1280 up
@@ -138,6 +138,7 @@ ip route add 1.1.1.1/32 dev wg0`, "--", target)
 	}
 	run("exec", bridge, "awg", "set", "awg0", "peer", settings.Keys.Public, "remove")
 	deny()
+	run("exec", bridge, "pkill", "-STOP", "-x", "amneziawg-go")
 	run("exec", bridge, "ip", "link", "del", "awg0")
 	deny()
 	// The namespace may now stop with the AWG process; restarting restores it.
