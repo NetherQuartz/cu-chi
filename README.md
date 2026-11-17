@@ -55,6 +55,10 @@ In NPM create an HTTPS proxy host for the portal, forwarding to `http://cuchi:80
 
 Keep the project directory and `.env` accessible only to NAS administrators. The encryption key must survive updates and have a separate private backup. When using the original filename from this repository, add `-f compose.npm.yaml` to every Compose command.
 
+### Container Manager logs
+
+Production Compose files inherit the Docker engine's default logging driver. This lets Synology use its own logger for the Container Manager UI. The application writes to stderr and the backup completion message to stdout; no extra log volume is needed. An explicit `json-file` override can hide otherwise valid container output from DSM's UI ([first-hand report on Synology Community](https://community.synology.com/enu/forum/72/post/187350)). Existing projects must remove their service-level `logging` blocks and recreate the containers to use the engine default. Image updates alone do not change the existing Compose configuration. Log retention then follows the host logger's configuration; `max-size`/`max-file` options for `json-file` are not assumed to work with Synology's driver. On ordinary Linux installations, configure bounded log retention at the Docker daemon or in an explicit host-specific override.
+
 ### Updating and rollback
 
 CI publishes `main` and `sha-<full-commit>` after successful main-branch checks. A pushed `v*` release tag publishes an image with that same tag. Use SHA or release tags for a deliberate update:

@@ -12,7 +12,7 @@ Keep these files current when behavior, constraints or verification results chan
 - Existing AmneziaWG clients on iOS, Android, Windows, macOS and Linux remain in use. Do not build a native VPN client.
 - AmneziaWG **3.1 or newer** is mandatory. Do not silently downgrade exported parameters.
 - One independent tunnel device gets its own identity/keys. A routing gateway can represent multiple LAN devices.
-- Browser Web Push reminders are planned; iOS requires a Home Screen web app and explicit permission.
+- Browser Web Push reminders are implemented; desktop Chrome receipt is confirmed. iOS requires a Home Screen web app and explicit permission; mobile acceptance remains pending. Manual reminders have no daily cap; deduplicate exact request retries only.
 - A local ordinary WireGuard → AmneziaWG gateway is planned for a Keenetic router.
 - WARP egress and VLESS are future adapters, not assumptions embedded into device records.
 

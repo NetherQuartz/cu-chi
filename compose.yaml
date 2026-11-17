@@ -27,9 +27,7 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
-    logging:
-      driver: json-file
-      options: {max-size: 10m, max-file: "3"}
+    # Inherit the engine logger so DSM Container Manager can display stdout/stderr.
   db:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -44,9 +42,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    logging:
-      driver: json-file
-      options: {max-size: 10m, max-file: "3"}
+    # Inherit the engine logger so DSM Container Manager can display stdout/stderr.
   backup:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -79,8 +75,6 @@ services:
       timeout: 5s
       start_period: 120s
       retries: 3
-    logging:
-      driver: json-file
-      options: {max-size: 10m, max-file: "3"}
+    # Inherit the engine logger so DSM Container Manager can display stdout/stderr.
 volumes:
   database:

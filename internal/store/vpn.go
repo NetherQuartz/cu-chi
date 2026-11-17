@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/NetherQuartz/cu-chi/internal/cryptobox"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -112,10 +113,21 @@ func (s *Store) SetDefaultServer(ctx context.Context, u User, id string) error {
 	if !ready {
 		return ErrConflict
 	}
+	var unchanged bool
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(default_server_id=$1,false) FROM vpn_preferences`, id).Scan(&unchanged); err != nil {
+		return err
+	}
+	if unchanged {
+		return nil
+	}
+	// A previous migration campaign no longer describes the current main-server change.
+	if _, err = tx.Exec(ctx, `UPDATE notifications SET expires_at=LEAST(expires_at,now()) WHERE kind='reminder'`); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(ctx, "UPDATE vpn_preferences SET default_server_id=$1", id); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,server_id) SELECT DISTINCT u.id,'reminder:'||$1::text||':'||to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD'),'reminder','warning',$1::uuid FROM users u JOIN devices d ON d.user_id=u.id JOIN profiles p ON p.device_id=d.id WHERE u.role<>'denied' AND p.desired AND p.server_id<>$1::uuid ON CONFLICT DO NOTHING`, id); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,server_id) SELECT DISTINCT u.id,$2,'reminder','warning',$1::uuid FROM users u JOIN devices d ON d.user_id=u.id JOIN profiles p ON p.device_id=d.id WHERE u.role<>'denied' AND p.desired AND p.server_id<>$1::uuid ON CONFLICT DO NOTHING`, id, "reminder:change:"+cryptobox.ID()); err != nil {
 		return err
 	}
 	if err = audit(ctx, tx, u.ID, "server.default_changed", id); err != nil {

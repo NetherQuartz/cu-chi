@@ -63,7 +63,17 @@ func (a *App) healthRoutes(mux *http.ServeMux) {
 		jsonResponse(w, 200, v)
 	}))
 	mux.HandleFunc("POST /api/admin/reminders", a.auth(true, func(w http.ResponseWriter, r *http.Request, s store.Session) {
-		n, err := a.db.SendReminders(r.Context(), s.User)
+		var input struct {
+			RequestID string `json:"request_id"`
+		}
+		if !decode(w, r, &input) {
+			return
+		}
+		if !uuidRE.MatchString(input.RequestID) {
+			apiError(w, 400, "Обновите список получателей и повторите отправку")
+			return
+		}
+		n, err := a.db.SendReminders(r.Context(), s.User, input.RequestID)
 		if err != nil {
 			a.failure(w, err)
 			return

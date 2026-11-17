@@ -156,7 +156,7 @@ func (s *Store) ConsumeLogin(ctx context.Context, stateHash string) ([]byte, err
 	return v, err
 }
 func (s *Store) Cleanup(ctx context.Context) error {
-	_, err := s.Pool.Exec(ctx, "DELETE FROM sessions WHERE expires_at <= now(); DELETE FROM login_attempts WHERE expires_at <= now(); DELETE FROM host_samples WHERE at<now()-interval '30 days'; DELETE FROM traffic_samples WHERE at<now()-interval '30 days'; DELETE FROM notifications WHERE created_at<now()-interval '90 days'; DELETE FROM push_subscriptions WHERE updated_at<now()-interval '180 days'")
+	_, err := s.Pool.Exec(ctx, "DELETE FROM sessions WHERE expires_at <= now(); DELETE FROM login_attempts WHERE expires_at <= now(); DELETE FROM host_samples WHERE at<now()-interval '30 days'; DELETE FROM traffic_samples WHERE at<now()-interval '30 days'; DELETE FROM notifications WHERE created_at<now()-interval '90 days'; DELETE FROM reminder_requests WHERE created_at<now()-interval '90 days'; DELETE FROM push_subscriptions WHERE updated_at<now()-interval '180 days'")
 	return err
 }
 func (s *Store) Devices(ctx context.Context, userID string, all bool) ([]Device, error) {

@@ -137,9 +137,63 @@ func TestReminderDeduplicationAndReissueSuppression(t *testing.T) {
 	if err = a.db.SetDefaultServer(ctx, admin.user, next); err != nil {
 		t.Fatal(err)
 	}
-	n, err := a.db.SendReminders(ctx, admin.user)
-	if err != nil || n != 0 {
-		t.Fatal("auto/manual duplicate", n, err)
+	requestID := cryptobox.ID()
+	n, err := a.db.SendReminders(ctx, admin.user, requestID)
+	if err != nil || n != 1 {
+		t.Fatal("manual reminder must be allowed immediately after automatic", n, err)
+	}
+
+	countReminders := func() int {
+		t.Helper()
+		var count int
+		if e := a.db.Pool.QueryRow(ctx, `SELECT count(*) FROM notifications WHERE user_id=$1 AND kind='reminder'`, u.user.ID).Scan(&count); e != nil {
+			t.Fatal(e)
+		}
+		return count
+	}
+	// Retrying the same action is safe; a new action is never limited by the day.
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			count, e := a.db.SendReminders(ctx, admin.user, requestID)
+			if e == nil && count != 1 {
+				e = errors.New("unexpected replay count")
+			}
+			results <- e
+		}()
+	}
+	for range 2 {
+		if e := <-results; e != nil {
+			t.Fatal(e)
+		}
+	}
+	n, err = a.db.SendReminders(ctx, admin.user, requestID)
+	if err != nil || n != 1 || countReminders() != 2 {
+		t.Fatal("retry duplicated reminder", n, err)
+	}
+	n, err = a.db.SendReminders(ctx, admin.user, cryptobox.ID())
+	if err != nil || n != 1 || countReminders() != 3 {
+		t.Fatal("new emergency send suppressed", n, err)
+	}
+	if err = a.db.SetDefaultServer(ctx, admin.user, next); err != nil || countReminders() != 3 {
+		t.Fatal("unchanged default notified", err)
+	}
+	if err = a.db.SetDefaultServer(ctx, admin.user, old); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.db.SetDefaultServer(ctx, admin.user, next); err != nil || countReminders() != 4 {
+		t.Fatal("same-day server change suppressed", err)
+	}
+	body := `{"request_id":"` + cryptobox.ID() + `"}`
+	requireStatus(t, request(a, "POST", "/api/admin/reminders", u, body), 403)
+	bad := admin
+	bad.csrf = ""
+	requireStatus(t, request(a, "POST", "/api/admin/reminders", bad, body), 403)
+	requireStatus(t, request(a, "POST", "/api/admin/reminders", admin, `{"request_id":"bad"}`), 400)
+	requireStatus(t, request(a, "POST", "/api/admin/reminders", admin, body), 200)
+	requireStatus(t, request(a, "POST", "/api/admin/reminders", admin, body), 200)
+	if countReminders() != 5 {
+		t.Fatal("HTTP retry duplicated notification")
 	}
 	audience, err := a.db.ReminderAudience(ctx)
 	if err != nil || len(audience) != 1 {

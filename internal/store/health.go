@@ -210,19 +210,34 @@ func (s *Store) ReminderAudience(ctx context.Context) ([]User, error) {
 	}
 	return out, rows.Err()
 }
-func (s *Store) SendReminders(ctx context.Context, actor User) (int64, error) {
-	tx, err := s.Pool.Begin(ctx)
+func (s *Store) SendReminders(ctx context.Context, actor User, requestID string) (int64, error) {
+	tx, err := vpnTx(ctx, s)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	// One reminder per user/main-server/day, including double-clicks and API retries.
-	r, err := tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,server_id) SELECT DISTINCT u.id,'reminder:'||v.default_server_id::text||':'||to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD'),'reminder','warning',v.default_server_id FROM users u JOIN devices d ON d.user_id=u.id JOIN profiles p ON p.device_id=d.id CROSS JOIN vpn_preferences v WHERE u.role<>'denied' AND p.desired AND p.server_id<>v.default_server_id ON CONFLICT DO NOTHING`)
+	inserted, err := tx.Exec(ctx, `INSERT INTO reminder_requests(actor_id,request_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, actor.ID, requestID)
 	if err != nil {
 		return 0, err
 	}
-	if err = audit(ctx, tx, actor.ID, "notifications.reminded", ""); err != nil {
+	if inserted.RowsAffected() == 0 {
+		var count int64
+		err = tx.QueryRow(ctx, `SELECT created_count FROM reminder_requests WHERE actor_id=$1 AND request_id=$2`, actor.ID, requestID).Scan(&count)
+		return count, err
+	}
+	// A new explicit send has a new request identity, even on the same server/day.
+	// Retrying that exact action returns its original result without new recipients.
+	key := "reminder:manual:" + actor.ID + ":" + requestID
+	r, err := tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,server_id) SELECT DISTINCT u.id,$1,'reminder','warning',v.default_server_id FROM users u JOIN devices d ON d.user_id=u.id JOIN profiles p ON p.device_id=d.id CROSS JOIN vpn_preferences v WHERE u.role<>'denied' AND p.desired AND p.server_id<>v.default_server_id`, key)
+	if err != nil {
 		return 0, err
 	}
-	return r.RowsAffected(), tx.Commit(ctx)
+	count := r.RowsAffected()
+	if _, err = tx.Exec(ctx, `UPDATE reminder_requests SET created_count=$3 WHERE actor_id=$1 AND request_id=$2`, actor.ID, requestID, count); err != nil {
+		return 0, err
+	}
+	if err = audit(ctx, tx, actor.ID, "notifications.reminded", requestID); err != nil {
+		return 0, err
+	}
+	return count, tx.Commit(ctx)
 }
