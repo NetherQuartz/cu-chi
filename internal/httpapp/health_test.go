@@ -110,6 +110,17 @@ func TestOutagePushPreferencesAndRecoveryEligibility(t *testing.T) {
 	if err = a.db.QueuePush(ctx); err != nil {
 		t.Fatal(err)
 	}
+	var pending int
+	if err = a.db.Pool.QueryRow(ctx, `SELECT count(*) FROM push_outbox`).Scan(&pending); err != nil || pending != 0 {
+		t.Fatal("stale outage was queued", err)
+	}
+	// After the monitor returns, only fresh incident evidence may authorize a push.
+	if _, err = a.db.Pool.Exec(ctx, `UPDATE health_state SET attempted_at=now() WHERE server_id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.db.QueuePush(ctx); err != nil {
+		t.Fatal(err)
+	}
 	// Disable category after queueing, before the sender claims it.
 	prefs := store.PushPreferences{Outages: false, Recovery: true, Reminders: true, Operations: true}
 	if err = a.db.SavePushPreferences(ctx, user.user, prefs); err != nil {
@@ -122,6 +133,7 @@ func TestOutagePushPreferencesAndRecoveryEligibility(t *testing.T) {
 	if err = a.db.FinishPush(ctx, job, 0, true); err != nil {
 		t.Fatal(err)
 	}
+	at = time.Now()
 	save("ok")
 	save("ok")
 	if err = a.db.QueuePush(ctx); err != nil {

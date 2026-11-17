@@ -2,15 +2,20 @@
 
 Self-hosted family VPN management with Synology SSO, individual device profiles and VPS deployment.
 
-**Status: VPS/profile implementation under acceptance testing.** Synology login, SSH deployment jobs, pinned AmneziaWG 3.1 runtime and individual profile issuance/revocation are implemented. A fresh real VPS and official client imports are still required for end-to-end acceptance. Web Push is planned.
+**Status: monitoring and Web Push release under acceptance testing.** Synology login, real Ubuntu 26.04 VPS deployment, external tunnel traffic, revocation and NAS backups have passed acceptance. Server/device traffic dashboards, periodic health checks and browser notifications are implemented and tested in CI; rollout of these additions to the NAS and native mobile notification/profile-import checks remain pending.
 
 ## Current functionality
 
 - Synology OIDC login with group-based administrator and user roles.
 - User-scoped device inventory; administrators can see all devices.
-- Administrator-only VPS inventory with encrypted SSH keys and pinned host fingerprints.
-- Semi-automatic Ubuntu 24.04 amd64 deployment, durable retries and main-server selection.
+- Administrator-only VPS inventory with encrypted passwords/private keys, reusable SSH keys and pinned host fingerprints (automatic first-use pinning or a manually verified pin).
+- Semi-automatic Ubuntu 24.04 / 26.04 LTS amd64 deployment, durable retries and main-server selection.
 - Per-device encrypted keys, `.conf`/QR export, reissue and confirmed peer revocation.
+- Server CPU/RAM/disk/network dashboards and traffic statistics by user, device and device/server pair.
+- Country flags/city metadata, separate profile currency and periodic tunnel/DNS/HTTPS health checks.
+- Debounced outages/recoveries, maintenance mode, per-user inbox and targeted Web Push with preferences.
+- Current-browser test push and honest transport status; iOS Home Screen installation support.
+- Daily NAS-local backups with 14 successful bundles retained; system-following dark theme and OS icons.
 - Session expiration, CSRF protection and a mutation audit log.
 - Russian responsive interface with no separate frontend build step.
 - PostgreSQL migrations and Docker Compose configuration.
@@ -62,6 +67,12 @@ docker compose up -d app
 
 Keep the previous tag and a database backup. To enable the backup service on an existing installation, also copy `backup.sh`, update Compose and recreate the full project. Migration 002 adds VPN state. After profiles are issued, do not roll back to an inventory-only version: it cannot revoke their peers. See the [recovery notes](docs/vpn-operations.md#persistence-and-recovery). Never use `docker compose down -v` during an ordinary update.
 
+## Browser notifications
+
+In **Уведомления**, connect each browser/device separately. On iPhone/iPad add the portal to the Home Screen and launch it there before requesting permission. Use **Отправить тест себе** to test the current browser only; other devices on your account are not included. The portal reports transport acceptance, not proof that the notification appeared or sounded. Critical severity requests high Web Push urgency but respects device Focus/sound settings.
+
+The encrypted VAPID identity and subscriptions are stored in PostgreSQL and covered by the existing database/master-key backups. No separate push credentials are required. NAS outbound HTTPS must reach the supported Google FCM, Apple or Mozilla push endpoints. The service worker does not cache profiles or authenticated responses. See [notification behavior and platform limits](docs/health-notifications.md).
+
 ## Local development
 
 Requirements: Go 1.26.11 and Docker Compose. Older Go installations with automatic toolchain selection download the required version. No Node.js installation is needed.
@@ -89,7 +100,7 @@ Without `TEST_DATABASE_URL`, PostgreSQL integration tests report a skip. CI alwa
 
 - [Architecture and security decisions](docs/architecture.md)
 - [Roadmap and acceptance criteria](docs/roadmap.md)
-- [Planned health checks and notifications](docs/health-notifications.md)
+- [Health checks and notifications](docs/health-notifications.md)
 - [Agent/session handoff](docs/handoff.md)
 - [Contributor and agent instructions](AGENTS.md)
 
