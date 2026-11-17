@@ -9,7 +9,7 @@ Keep these files current when behavior, constraints or verification results chan
 - A self-hosted family VPN portal, hosted on DSM 7.2 / Xpenology.
 - Users sign in through Synology SSO (OIDC). Admin authority comes from a verified Synology group.
 - The owner provisions existing VPSs semi-automatically. Users manually reissue and import their own profiles.
-- Existing AmneziaWG apps on iOS, Android, Windows and macOS remain in use. Do not build a native VPN client.
+- Existing AmneziaWG clients on iOS, Android, Windows, macOS and Linux remain in use. Do not build a native VPN client.
 - AmneziaWG **3.1 or newer** is mandatory. Do not silently downgrade exported parameters.
 - One independent tunnel device gets its own identity/keys. A routing gateway can represent multiple LAN devices.
 - Browser Web Push reminders are planned; iOS requires a Home Screen web app and explicit permission.

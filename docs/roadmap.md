@@ -52,3 +52,6 @@ Detailed requirements: [health and notifications](health-notifications.md). Moni
 - Automatic censorship diagnosis or global server rotation.
 - Custom native VPN clients or silent replacement of imported client configs.
 - Kubernetes or a distributed service architecture.
+
+
+Monitoring scope additions (2026-11-17): country flag and city for servers; traffic history by user (all devices), device (all servers), and device/server pair. Preserve measured history across profile rotations and migrations; expose sample age/gaps and avoid claiming that a recent handshake proves end-to-end connectivity. Detailed acceptance is in `health-notifications.md`.
