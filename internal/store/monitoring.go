@@ -25,6 +25,9 @@ func (s *Store) NextMonitor(ctx context.Context) (string, error) {
 	return id, err
 }
 func (s *Store) SaveObservation(ctx context.Context, id string, v telemetry.Sample, failure string) error {
+	// PostgreSQL timestamptz stores microseconds. Normalize before ordering and
+	// duplicate detection so retrying a nanosecond-resolution sample is a no-op.
+	v.At = v.At.UTC().Truncate(time.Microsecond)
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err

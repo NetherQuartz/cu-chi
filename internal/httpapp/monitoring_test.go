@@ -22,7 +22,7 @@ func TestTrafficOwnershipRotationResetsAndRetention(t *testing.T) {
 	db := deviceFor(t, a, bob, "Bob phone")
 	pb := issueFor(t, a, bob, db)
 	applyJob(t, a, w, "")
-	at := time.Now().UTC().Add(-10 * time.Minute)
+	at := time.Now().UTC().Truncate(time.Microsecond).Add(-10*time.Minute + 999*time.Nanosecond)
 	sample := telemetry.Sample{At: at, Boot: "boot", Epoch: "runtime", Interface: "eth0", CPU: 100, Idle: 20, Cores: 2, MemoryTotal: 1000, MemoryUsed: 400, DiskTotal: 1000, DiskUsed: 200, Tunnel: true, Peers: []telemetry.Peer{{Key: p.PublicKey, RX: 100, TX: 200, Handshake: at.Unix()}, {Key: pb.PublicKey, RX: 800, TX: 900}}}
 	save := func() {
 		t.Helper()
