@@ -10,7 +10,7 @@ Existing external VPN connections must not depend on portal availability. The lo
 
 Go keeps the API, embedded frontend and deployment worker in one distributable binary. The project uses standard-library HTTP routing and established OIDC/OAuth, PostgreSQL and SSH libraries. This choice favors a compact NAS installation and networking automation; throughput is not the deciding factor at family scale. Django would provide more built-in CRUD/admin functionality. The owner asked for the rationale; no alternative stack was requested.
 
-The current UI is HTML/CSS/JavaScript embedded in the binary. A future frontend framework can replace it without changing the protocol or ownership model. PostgreSQL holds durable state and a transactional job queue; Redis is not required for the initial scope.
+The current UI is HTML/CSS/JavaScript embedded in the binary. Active sections use an allowlisted `?view=` query parameter with browser history, preserving the section on reload; unknown or unauthorized sections fall back to Devices. Profile submission shows immediate request progress, followed by server-pending progress until polling observes readiness or a reported failure. A future frontend framework can replace it without changing the protocol or ownership model. PostgreSQL holds durable state and a transactional job queue; Redis is not required for the initial scope.
 
 ## Identity and authorization
 

@@ -34,7 +34,8 @@ async function start() {
   $('#avatar').textContent = state.me.user.username.slice(0, 1).toUpperCase(); $('#dev-badge').hidden = !state.me.dev_auth;
   $('#device-list-title').textContent = admin ? 'Все устройства' : 'Ваши устройства';
   $('.stat small').textContent = admin ? 'У всех пользователей' : 'В вашем кабинете';
-  await changeView(new URLSearchParams(location.search).get('view')==='notifications'?'notifications':'devices');
+  await changeView(new URLSearchParams(location.search).get('view')||'devices',{history:'replace'});
+  if(state.view!=='devices')api('/api/devices').then(devices=>{state.devices=devices;$('#nav-count').textContent=devices.length;$('#nav-count').hidden=false;}).catch(()=>{$('#nav-count').hidden=true;});
   updateNoticeCount();
  } catch (error) { showLogin(); $('#login-error').textContent = error.message; }
  finally { $('#loading').hidden = true; }
@@ -43,7 +44,7 @@ async function loadDevices() {
  [state.devices,state.profiles,state.vpn,state.services,state.health] = await Promise.all([api('/api/devices'),api('/api/profiles'),api('/api/vpn'),api('/api/services'),api('/api/health')]);
  const container = $('#devices'); container.replaceChildren();
  $('#device-empty').hidden = state.devices.length > 0;
- $('#device-count').textContent = state.devices.length; $('#nav-count').textContent = state.devices.length;
+ $('#device-count').textContent = state.devices.length; $('#nav-count').textContent = state.devices.length; $('#nav-count').hidden=false;
  $('#platform-count').textContent = new Set(state.devices.map(d => d.platform)).size;
  $('#device-summary').textContent = `${state.devices.length} всего`;
  for (const device of state.devices) {
@@ -54,7 +55,9 @@ async function loadDevices() {
   top.append(icon, remove); card.append(top, node('h3', '', device.name), node('p', 'platform', platforms[device.platform]));
   const profiles = state.profiles.filter(p => p.device_id === device.id);
   const current = profiles.find(p => p.desired);
-  const meta = node('div', 'device-meta'); meta.append(node('span', '', device.owner), node('span', 'badge', current ? (current.state === 'ready' ? 'Профиль готов' : 'Применяется на сервере') : 'Профиль не выпущен')); card.append(meta);
+  const applying=current?.state==='pending'&&!current.needs_attention;
+  const meta = node('div', 'device-meta'); meta.append(node('span', '', device.owner), node('span', 'badge', current ? (current.needs_attention?'Требуется внимание':current.state === 'ready' ? 'Профиль готов' : 'Применяется на сервере') : 'Профиль не выпущен')); card.append(meta);
+  if(applying){const progress=node('div','profile-progress');progress.setAttribute('role','status');const spinner=node('span','spinner');spinner.setAttribute('aria-hidden','true');const text=node('div');text.append(node('strong','','Готовим профиль…'),node('p','small muted','Применяем настройки на сервере. Скачивание и QR появятся автоматически.'));progress.append(spinner,text);card.append(progress);}
   if (profiles.some(p=>p.needs_attention)) card.append(node('p','form-error','Не удалось применить изменения. Администратору нужно проверить сервер.'));
   if (current) {card.append(node('p', 'small muted', `${current.server_name} · версия ${current.revision}`));const service=state.services.find(s=>s.id===current.server_id);if(service){card.append(locationLabel(service),node('p','small muted',serviceStatus(service)));}if(current.state==='ready')card.append(node('p',current.server_id!==state.vpn.server_id?'form-error':'small muted',current.server_id!==state.vpn.server_id?'Доступен новый основной сервер — перевыпустите профиль':'Профиль для текущего сервера'));}
   if (profiles.some(p => p.state === 'revoking')) card.append(node('p','form-error','Отзыв старых ключей ещё не подтверждён сервером.'));
@@ -63,7 +66,7 @@ async function loadDevices() {
    const download=node('a','button secondary','Скачать .conf'); download.href=`/api/profiles/${current.id}/download`; controls.append(download);
    const qr=node('button','button secondary','QR'); qr.addEventListener('click',()=>{ $('#profile-qr').src=`/api/profiles/${current.id}/qr`; $('#qr-dialog').showModal(); }); controls.append(qr);
   }
-  const issue=node('button','button secondary',current?'Перевыпустить':'Выпустить профиль'); issue.disabled=!state.vpn.available || current?.state==='pending';
+  const issue=node('button','button secondary',applying?'Подготовка профиля…':current?'Перевыпустить':'Выпустить профиль'); issue.disabled=!state.vpn.available || current?.state==='pending';
   issue.addEventListener('click',()=>confirmProfile(device,'issue')); controls.append(issue);
   if (profiles.length) { const revoke=node('button','button secondary','Отозвать'); revoke.addEventListener('click',()=>confirmProfile(device,'revoke')); controls.append(revoke); }
   if (!state.vpn.available) card.append(node('p','small muted','Администратор должен выбрать готовый основной сервер.'));
@@ -98,8 +101,11 @@ async function loadEvents() {
  const events = await api('/api/admin/events'); const tbody = $('#events'); tbody.replaceChildren(); $('#event-empty').hidden = events.length > 0; $('#events-view .table-wrap').hidden = !events.length;
  for (const event of events) { const row = node('tr'); row.append(node('td', '', actions[event.action] || event.action), node('td', '', event.actor), node('td', '', new Date(event.created_at).toLocaleString('ru-RU'))); tbody.append(row); }
 }
-async function changeView(view) {
- if (!state.me || (!['devices','traffic','notifications'].includes(view) && state.me.user.role !== 'admin')) return;
+async function changeView(view,{history:historyMode='push'}={}) {
+ if(!state.me)return;
+ if(!['devices','servers','gateways','events','traffic','notifications'].includes(view)||(!['devices','traffic','notifications'].includes(view)&&state.me.user.role!=='admin'))view='devices';
+ const url=new URL(location.href);if(view==='devices')url.searchParams.delete('view');else url.searchParams.set('view',view);
+ if(url.href!==location.href)history[historyMode==='replace'?'replaceState':'pushState'](null,'',url);
  state.view = view;
  const title = { devices: 'Устройства', servers: 'Серверы', gateways:'Домашние шлюзы', events: 'Журнал изменений', traffic:'Статистика',notifications:'Уведомления' }[view];
  $('#page-title').textContent = title; $('#breadcrumb').textContent = `Личный кабинет / ${title}`;
@@ -123,6 +129,7 @@ function bindForm(name, handler) {
 $$('[data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 $$('dialog').forEach(dialog => dialog.addEventListener('close', () => { $$('textarea, input[type="password"]', dialog).forEach(el => { el.value = ''; }); }));
 $$('[data-view]').forEach(button => button.addEventListener('click', () => changeView(button.dataset.view)));
+window.addEventListener('popstate',()=>changeView(new URLSearchParams(location.search).get('view')||'devices',{history:'replace'}));
 $('#add').addEventListener('click', () => openDialog(state.view === 'devices' ? 'device' : state.view==='gateways'?'gateway':'server'));
 $('#empty-add-device').addEventListener('click', () => openDialog('device')); $('#empty-add-server').addEventListener('click', () => openDialog('server'));
 $('#logout').addEventListener('click', async () => { try { await api('/api/logout', { method: 'POST' }); state.me = null; location.reload(); } catch (error) { notify(error.message); } });
@@ -137,7 +144,19 @@ function confirmProfile(device,action){
 }
 async function serverAction(id,action){try{await api(`/api/admin/servers/${id}/${action}`,{method:'POST'});await loadServers();notify(action==='default'?'Основной сервер изменён':'Задание поставлено в очередь');}catch(e){notify(e.message);}}
 bindForm('deploy',async form=>{const input=Object.fromEntries(new FormData(form));input.port=Number(input.port);await api(`/api/admin/servers/${state.deploying}/deploy`,{method:'POST',body:JSON.stringify(input)});$('#deploy-dialog').close();await loadServers();notify('Деплой поставлен в очередь');});
-bindForm('profile',async()=>{const {device,action}=state.profileAction;await api(`/api/devices/${device.id}/${action==='issue'?'profiles':'revoke'}`,{method:'POST'});$('#profile-dialog').close();await loadDevices();notify('Задание поставлено в очередь');});
+bindForm('profile',async form=>{
+ const {device,action}=state.profileAction,submit=$('button[type="submit"]',form),progress=$('#profile-progress');
+ const label=submit.textContent,spinner=node('span','spinner');spinner.setAttribute('aria-hidden','true');
+ submit.replaceChildren(spinner,node('span','','Отправляем…'));form.setAttribute('aria-busy','true');
+ progress.hidden=false;progress.textContent=action==='issue'?'Отправляем запрос на выпуск профиля…':'Отправляем запрос на отзыв профилей…';
+ try{
+  await api(`/api/devices/${device.id}/${action==='issue'?'profiles':'revoke'}`,{method:'POST'});
+  progress.textContent='Запрос принят. Обновляем состояние устройства…';
+  // Once accepted, a failed refresh must not invite another mutation submission.
+  try{await loadDevices();}catch(error){$('#page-error').textContent='Запрос принят, но не удалось обновить состояние: '+error.message;$('#page-error').hidden=false;}
+  $('#profile-dialog').close();notify(action==='issue'?'Выпуск профиля запрошен':'Отзыв профилей запрошен');
+ }finally{submit.textContent=label;form.removeAttribute('aria-busy');progress.hidden=true;}
+});
 $('#qr-dialog').addEventListener('close',()=>$('#profile-qr').removeAttribute('src'));
 setInterval(async()=>{if(!state.me||state.loading||document.hidden||$('dialog[open]')||$('#servers details[open]'))return;state.loading=true;try{if(state.view==='servers')await loadServers();if(state.view==='gateways')await loadGateways();if(state.view==='devices')await loadDevices();if(state.view==='traffic')await loadTraffic();}catch(e){$('#page-error').textContent=e.message;$('#page-error').hidden=false;}finally{state.loading=false;}},5000);
 function updateHostPolicy(){const field=$('#server-form').elements.host_key_fingerprint;const manual=$('#server-form').elements.host_key_policy.value==='manual';$('#host-fingerprint-field').hidden=!manual;$('#host-fingerprint-help').hidden=!manual;field.disabled=!manual;field.required=manual;if(!manual)field.value='';}
