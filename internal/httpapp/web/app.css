@@ -7,3 +7,35 @@
 .card-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.card-actions .button{font-size:13px;padding:10px 13px}.form-error{overflow-wrap:anywhere}#profile-qr{width:100%;max-width:512px;height:auto}input[readonly]{opacity:.7}
 
 .auth-error{max-width:580px;margin:8vh auto;padding:28px}.auth-error .brand{margin-bottom:44px}.auth-error h1{font-size:clamp(28px,6vw,40px);line-height:1.15}.auth-error p{line-height:1.6}.auth-error .card-actions{margin:28px 0}.error-reference{display:block;overflow-wrap:anywhere;font-size:13px}
+
+/* Follow the device preference; keep the canvas truly black for OLED screens. */
+:root{color-scheme:light}
+@media(prefers-color-scheme:dark){
+ :root{color-scheme:dark;color:#e3ece5;background:#000;--green:#315b46;--muted:#a4afa6;--line:#29332c;--white:#000}
+ body,.shell{background:#000}
+ .sidebar,.login-layout{background:#000}
+ .sidebar{border-color:var(--line)}
+ .brand,.topbar-brand{color:#dfeae2}
+ .nav-item{color:#a4afa6}.nav-item:hover{background:#101811}.nav-item.active{background:#15261b;color:#d1e7c7}.nav-count{background:#2b4932;color:#e2f1d7}
+ .account strong,.section-heading h2{color:#e3ece5}.avatar{background:#302b1d;color:#e5d5a8}.logout{color:#b1bcb3}
+ .topbar,.eyebrow{color:#a4afa6}
+ .stat,.device-card,.server-card,.table-wrap,dialog{background:#0b0f0c;border-color:var(--line);color:#e3ece5}
+ .stat>span,.stat small,.platform,.device-meta,.server-address{color:#a4afa6}
+ .stat>strong,.stat-note strong,.device-card h3,.server-card h3{color:#e3ece5}
+ .stat-note p,.development-note{color:#a4afa6}
+ .notice{background:#101a13;border-color:#2c4532;color:#d5e4d8}.notice p{color:#b4c5b7}
+ .empty-state{background:#080b09;border-color:var(--line)}.empty-state h2{color:#e3ece5}.empty-state p{color:#a4afa6}.empty-icon,.platform-icon{background:#172319;color:#bbd4b5}
+ .badge{background:#1b2b1e;color:#c1dbb8}
+ .primary{background:#315b46;color:#fff}.primary:hover{background:#3d7056}
+ .secondary{background:#111a14;border-color:#344238;color:#d5e7d6}.secondary:hover{background:#1c2b20}
+ .icon-button{color:#b7c6bb}.icon-button:hover{background:#203025}
+ input,select,textarea{background:#000;color:#e2eee4;border-color:#3a483d}input::placeholder,textarea::placeholder{color:#8c9d90}
+ input:focus,select:focus,textarea:focus{border-color:#85b294;box-shadow:0 0 0 3px #1d3325}
+ details{color:#b4c5b7}code{background:#111b14;color:#d1e4d6}
+ th{background:#0d150f;color:#b5c9b4}td{border-color:#253329;color:#d1dfd3}
+ .form-error,.error-notice{color:#ffae9e}.error-notice{background:#000;border-color:#65382d}
+ .dev-badge{background:#251f10;border-color:#615232;color:#e0cc93}
+ .toast{background:#284c38;color:#fff}.login-content .muted{color:#a4afa6}.login-art{background:#000}
+ dialog::backdrop{background:#000b}.loading{background:#000;color:#d6e8d5}
+ #profile-qr{background:#fff}
+}

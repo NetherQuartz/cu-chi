@@ -91,3 +91,11 @@ The owner authorized TOFU as the default registration flow, with manual verified
 ## Local NAS backups requested
 
 Added a daily PostgreSQL backup sidecar to both production Compose files (official postgres:17-alpine, no new custom image). Installation now requires the repository's `deploy/backup/backup.sh` alongside Compose as `backup.sh`. The bind-mounted private backups folder is separate from the database volume. Bundles contain a validated custom-format dump, original master key and image tag, mode 600; retain 14 successful bundles, retry failures hourly, report failure/staleness through container health. Deployment configuration is still preserved separately. Restore, permission, retention and failure-path tests passed locally; CI also runs them. No cloud/offsite replication is configured. NAS rollout is pending.
+
+## Follow-up fixes being validated
+
+The owner noticed repeated logouts. A freshly authenticated production session had only about 161 seconds remaining; callback code incorrectly bounded RP session lifetime to the short-lived ID token. Changed this to an independent 30-minute portal session after all OIDC verification; expired assertions, bad nonce/audience and missing groups still fail. This follows OpenID Connect Core's distinction between assertion expiry and RP session duration. Added a short-lived signed-token regression test.
+
+System-following dark mode was requested, explicitly AMOLED: the page canvas uses #000000 while subtly lighter dark cards preserve readability. The owner clarified that making every surface black was not requested. The browser preview can force only the dark CSS branch locally for visual inspection without changing the owner's OS preference.
+
+DSM requires the backup bind directory to exist before container startup. The File Station-created directory also belongs to a NAS user; the backup service now has only CHOWN in addition to dropped capabilities, initializes the backup directory's root ownership and mode 700. The integration test reproduces the non-root-owned directory and checks restore/retention. Full NAS backup verification is still pending.

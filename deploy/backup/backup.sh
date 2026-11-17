@@ -13,6 +13,8 @@ case "${1:-}" in
  --once)
   umask 077
   mkdir -p /backups
+  # DSM File Station creates the bind directory under the NAS administrator UID.
+  chown 0:0 /backups
   chmod 700 /backups
   exec 9>/backups/.lock
   flock 9

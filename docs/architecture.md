@@ -19,7 +19,7 @@ The current UI is HTML/CSS/JavaScript embedded in the binary. A future frontend 
 - `groups` must be present in a verified ID token. Exact configured admin-group membership grants administrator; user-group membership grants user; everything else is denied.
 - The identity key is `(issuer, subject)`, never an unverified email or browser-supplied role. Synology subjects may be username-based; account renames/recreation require deliberate reconciliation, not automatic ownership transfer.
 - Opaque random session cookies are HttpOnly/Secure/SameSite=Lax in production. Only token hashes are stored in PostgreSQL.
-- Session lifetime is bounded to 30 minutes or the ID token expiry, whichever is earlier. Groups refresh at login, not continuously. A new denied login blocks that user's existing sessions; external group removal alone is not instant revocation.
+- Portal sessions last 30 minutes from a verified login. ID-token expiry is checked when accepting the OIDC assertion; it does not shorten the independent portal session. Synology may issue assertions lasting only a few minutes. Groups refresh at login, not continuously. A new denied login blocks that user's existing sessions; external group removal alone is not instant revocation.
 - Backend roles and SQL ownership checks protect resources; hiding navigation is only presentation.
 - Unsafe authenticated requests require the exact configured Origin and a session CSRF token.
 - Development authentication requires explicit opt-in, an IP loopback listener and an identical loopback HTTP origin. It is never enabled by production Compose.

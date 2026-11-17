@@ -12,8 +12,10 @@ cleanup() {
 }
 trap cleanup EXIT
 docker volume create "$volume" >/dev/null
+# Model a bind directory created by a NAS user rather than by Docker root.
+docker run --rm -v "$volume:/backups" --entrypoint /bin/sh postgres:17-alpine -c 'chown 1026:100 /backups; chmod 700 /backups'
 run() {
- docker run --rm --network host --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp \
+ docker run --rm --network host --read-only --cap-drop ALL --cap-add CHOWN --security-opt no-new-privileges --tmpfs /tmp \
   -e PGHOST="${BACKUP_TEST_HOST:-127.0.0.1}" -e PGPORT="${BACKUP_TEST_PORT:-5432}" -e PGUSER=cuchi -e PGDATABASE="${BACKUP_TEST_DATABASE:-cuchi_test}" -e PGPASSWORD="${BACKUP_TEST_PASSWORD:-ci-only-password}" \
   -e CUCHI_MASTER_KEY=fixture-only -e CUCHI_IMAGE_TAG=test -e RESTORE_DB="$restore" -e PROBE_TABLE="$probe" -v "$volume:/backups" -v "$root/deploy/backup/backup.sh:/usr/local/bin/cuchi-backup:ro" \
   --entrypoint /bin/sh postgres:17-alpine "$@"

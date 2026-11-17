@@ -103,10 +103,9 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 		a.loginFailure(w, 403, "access_denied", "У вашей учётной записи нет доступа. Обратитесь к администратору Synology.", nil)
 		return
 	}
+	// ID-token exp bounds acceptance of the login assertion, not the RP session.
+	// Signature, expiry, nonce and groups have already been verified above.
 	expires := time.Now().Add(30 * time.Minute)
-	if id.Expiry.Before(expires) {
-		expires = id.Expiry
-	}
 	value := cryptobox.Token()
 	if err := a.db.CreateSession(r.Context(), cryptobox.Hash(value), u.ID, cryptobox.Token(), expires); err != nil {
 		a.loginFailure(w, 503, "storage", "Сервис входа временно недоступен. Попробуйте ещё раз позже.", nil)

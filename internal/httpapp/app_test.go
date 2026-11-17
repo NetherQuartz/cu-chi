@@ -251,6 +251,8 @@ func TestOIDCLoginVerification(t *testing.T) {
 		}
 		claims := map[string]any{"iss": issuer, "sub": "alice", "aud": "cuchi-test", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": nonce, "username": "Alice", "groups": []string{"vpn-users"}}
 		switch mode {
+		case "short lived":
+			claims["exp"] = time.Now().Add(3 * time.Minute).Unix()
 		case "wrong nonce":
 			claims["nonce"] = "wrong"
 		case "wrong audience":
@@ -274,7 +276,7 @@ func TestOIDCLoginVerification(t *testing.T) {
 	for _, test := range []struct {
 		mode   string
 		status int
-	}{{"ok", 303}, {"exchange failure", 502}, {"wrong nonce", 401}, {"wrong audience", 401}, {"expired", 401}, {"no groups", 403}} {
+	}{{"ok", 303}, {"short lived", 303}, {"exchange failure", 502}, {"wrong nonce", 401}, {"wrong audience", 401}, {"expired", 401}, {"no groups", 403}} {
 		t.Run(test.mode, func(t *testing.T) {
 			mode = test.mode
 			exchanges = 0
@@ -305,7 +307,7 @@ func TestOIDCLoginVerification(t *testing.T) {
 			if exchanges != 1 {
 				t.Fatalf("authorization code exchanged %d times", exchanges)
 			}
-			if test.mode != "ok" {
+			if test.status != 303 {
 				if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(w.Body.String(), "Повторить вход") {
 					t.Fatal("callback error has no browser recovery page")
 				}
@@ -319,11 +321,18 @@ func TestOIDCLoginVerification(t *testing.T) {
 				}
 			}
 
-			if test.mode == "ok" {
+			if test.status == 303 {
 				found := false
 				for _, c := range w.Result().Cookies() {
 					if c.Name == "cuchi_session" {
 						found = true
+						if c.MaxAge < 1790 || c.MaxAge > 1800 {
+							t.Fatal("session lifetime incorrectly follows ID token")
+						}
+						session, err := a.db.Session(context.Background(), cryptobox.Hash(c.Value))
+						if err != nil || time.Until(session.Expires) < 29*time.Minute || time.Until(session.Expires) > 30*time.Minute {
+							t.Fatal("wrong database session lifetime")
+						}
 						requireStatus(t, request(a, "GET", "/api/me", identity{token: c.Value}, ""), 200)
 					}
 				}
