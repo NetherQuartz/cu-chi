@@ -179,7 +179,7 @@ func (a *App) downloadProfile(w http.ResponseWriter, r *http.Request, session st
 		w.Write(png)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="cuchi-%s.conf"`, p.ID))
-	w.Write([]byte(profile))
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, profileFilename(p)))
+	w.Write([]byte(profileMetadata(p) + profile))
 }

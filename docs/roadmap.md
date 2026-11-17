@@ -59,7 +59,7 @@ Monitoring scope additions (2026-11-17): country flag and city for servers; traf
 
 ## Health/push implementation checkpoint
 
-Implemented: periodic isolated AWG DNS/HTTPS probe, debounced incidents/recovery, maintenance, role/audience-scoped inbox, automatic main-server-change reminders, manual outstanding-audience preview/send, final job-failure admin alerts, encrypted VAPID/Web Push with preferences and retries, PWA installation support, current-browser self-test and transport status. Monitoring CI passed at `90865df`. Health/push CI passed, the NAS was upgraded, server probes and desktop Chrome/Android push receipt were confirmed; corrected Android status-bar badge and iOS acceptance remain pending. Optional scheduled reminders and arbitrary selected-user campaigns remain extensions. WARP and VLESS remain future adapters; the local gateway is now implemented with acceptance in progress.
+Implemented: periodic isolated AWG DNS/HTTPS probe, debounced incidents/recovery, maintenance, role/audience-scoped inbox, automatic main-server-change reminders, manual outstanding-audience preview/send, final job-failure admin alerts, encrypted VAPID/Web Push with preferences and retries, PWA installation support, current-browser self-test and transport status. Monitoring CI passed at `90865df`. Health/push CI passed, the NAS was upgraded, server probes and desktop Chrome/Android push receipt were confirmed; Android status-bar badge acceptance is confirmed; iOS acceptance remains pending. Optional scheduled reminders and arbitrary selected-user campaigns remain extensions. WARP and VLESS remain future adapters; the local gateway is now implemented with acceptance in progress.
 
 ## Local gateway implementation in progress
 

@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"mime"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -137,6 +139,21 @@ func TestVPNLifecycleOwnershipAndRetry(t *testing.T) {
 	}
 	download := request(a, "GET", "/api/profiles/"+p.ID+"/download", alice, "")
 	requireStatus(t, download, 200)
+	if download.Header().Get("Content-Type") != "application/octet-stream" {
+		t.Fatal("config must download without a text/plain extension hint")
+	}
+	kind, params, err := mime.ParseMediaType(download.Header().Get("Content-Disposition"))
+	if err != nil || kind != "attachment" || !regexp.MustCompile(`^[a-z0-9-]{1,15}\.conf$`).MatchString(params["filename"]) {
+		t.Fatalf("invalid config filename: %v %v", params, err)
+	}
+	if !strings.Contains(download.Body.String(), "# User: "+alice.user.Username) || !strings.Contains(download.Body.String(), "# Server: Test VPS") || !strings.Contains(download.Body.String(), "# Device: Phone") || !strings.Contains(download.Body.String(), "# Revision: 1") {
+		t.Fatal("missing profile metadata")
+	}
+	adminDownload := request(a, "GET", "/api/profiles/"+p.ID+"/download", admin, "")
+	requireStatus(t, adminDownload, 200)
+	if adminDownload.Header().Get("Content-Disposition") != download.Header().Get("Content-Disposition") || adminDownload.Body.String() != download.Body.String() {
+		t.Fatal("admin export must use device owner, not downloading administrator")
+	}
 	if !strings.Contains(download.Body.String(), "HeaderProtectionKey = ") || !strings.Contains(download.Body.String(), "RandomTrailers = 1") {
 		t.Fatal("missing AWG 3.1 settings")
 	}

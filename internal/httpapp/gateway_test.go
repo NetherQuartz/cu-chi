@@ -48,6 +48,9 @@ func TestGatewayLifecycleAndIsolation(t *testing.T) {
 	path := "/api/admin/gateways/" + g.ID
 	requireStatus(t, request(a, "GET", path+"/keenetic.conf", normal, ""), 403)
 	download := request(a, "GET", path+"/keenetic.conf", admin, "")
+	if download.Header().Get("Content-Type") != "application/octet-stream" {
+		t.Fatal("router config must download as a file")
+	}
 	requireStatus(t, download, 200)
 	if download.Header().Get("Cache-Control") != "no-store" || !strings.Contains(download.Body.String(), "PrivateKey") {
 		t.Fatal("missing private download protection")

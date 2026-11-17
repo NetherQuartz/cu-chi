@@ -13,6 +13,8 @@ import (
 var ErrConflict = errors.New("operation conflicts with current VPN state")
 
 type Profile struct {
+	OwnerName      string    `json:"-"`
+	DeviceName     string    `json:"-"`
 	NeedsAttention bool      `json:"needs_attention"`
 	ID             string    `json:"id"`
 	DeviceID       string    `json:"device_id"`
@@ -278,7 +280,7 @@ func (s *Store) Profiles(ctx context.Context, u User) ([]Profile, error) {
 func (s *Store) Download(ctx context.Context, u User, id string) (Profile, Target, error) {
 	var p Profile
 	var t Target
-	err := s.Pool.QueryRow(ctx, `SELECT p.id::text,p.device_id::text,p.server_id::text,p.address,p.encrypted_keys,s.endpoint,s.vpn_port,s.encrypted_vpn_settings FROM profiles p JOIN devices d ON d.id=p.device_id JOIN servers s ON s.id=p.server_id WHERE p.id=$1 AND (d.user_id=$2 OR $3) AND p.state='ready' AND p.desired`, id, u.ID, u.Role == "admin").Scan(&p.ID, &p.DeviceID, &p.ServerID, &p.Address, &p.EncryptedKeys, &t.Endpoint, &t.VPNPort, &t.EncryptedSettings)
+	err := s.Pool.QueryRow(ctx, `SELECT p.id::text,p.device_id::text,p.server_id::text,p.address,p.encrypted_keys,s.endpoint,s.vpn_port,s.encrypted_vpn_settings,u.username,d.name,s.name,p.revision,p.created_at FROM profiles p JOIN devices d ON d.id=p.device_id JOIN users u ON u.id=d.user_id JOIN servers s ON s.id=p.server_id WHERE p.id=$1 AND (d.user_id=$2 OR $3) AND p.state='ready' AND p.desired`, id, u.ID, u.Role == "admin").Scan(&p.ID, &p.DeviceID, &p.ServerID, &p.Address, &p.EncryptedKeys, &t.Endpoint, &t.VPNPort, &t.EncryptedSettings, &p.OwnerName, &p.DeviceName, &p.ServerName, &p.Revision, &p.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotFound
 	}

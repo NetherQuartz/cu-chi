@@ -63,7 +63,7 @@ func (a *App) gatewayRoutes(mux *http.ServeMux) {
 			a.failure(w, errors.New("invalid LAN identity"))
 			return
 		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="cuchi-keenetic-%s.conf"`, id))
 		w.Write([]byte(lan.RouterConfig))
 	}))
