@@ -60,12 +60,14 @@ Keep the project directory and `.env` accessible only to NAS administrators. The
 CI publishes `main` and `sha-<full-commit>` after successful main-branch checks. A pushed `v*` release tag publishes an image with that same tag. Use SHA or release tags for a deliberate update:
 
 ```sh
-# Change CUCHI_IMAGE_TAG in .env first.
+# Back up the currently installed version before editing .env.
+docker compose exec -T backup /bin/sh /usr/local/bin/cuchi-backup --once
+# Now change CUCHI_IMAGE_TAG in .env.
 docker compose pull app
-docker compose up -d app
+docker compose up -d --wait app backup
 ```
 
-Keep the previous tag and a database backup. To enable the backup service on an existing installation, also copy `backup.sh`, update Compose and recreate the full project. Migration 002 adds VPN state. After profiles are issued, do not roll back to an inventory-only version: it cannot revoke their peers. See the [recovery notes](docs/vpn-operations.md#persistence-and-recovery). Never use `docker compose down -v` during an ordinary update.
+Recreate the backup service along with the app so future bundles record the new image tag. Keep the previous tag and a database backup. To enable the backup service on an existing installation, also copy `backup.sh`, update Compose and recreate the full project. Migration 002 adds VPN state. After profiles are issued, do not roll back to an inventory-only version: it cannot revoke their peers. See the [recovery notes](docs/vpn-operations.md#persistence-and-recovery). Never use `docker compose down -v` during an ordinary update.
 
 ## Browser notifications
 
