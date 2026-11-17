@@ -45,10 +45,16 @@ func TestRuntimeRoundTrip(t *testing.T) {
 		exec.Command("docker", "network", "rm", name).Run()
 	})
 	dir := t.TempDir()
+	// The runner owns test fixtures; root without DAC_OVERRIDE cannot read its
+	// mode-0600 files on Linux. Fixtures are ephemeral, and t.TempDir's parent
+	// stays private. Real VPS files are mode 0600 and owned by root.
+	if err := os.Chmod(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	settings, keys := NewSettings(), NewKeys()
 	write := func(name, data string) {
 		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}

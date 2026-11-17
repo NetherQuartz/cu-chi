@@ -29,7 +29,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	flow := loginFlow{Nonce: cryptobox.Token(), Verifier: oauth2.GenerateVerifier()}
 	payload, _ := json.Marshal(flow)
 	if err := a.db.SaveLogin(r.Context(), cryptobox.Hash(state), a.box.Seal(payload, "login:"+state)); err != nil {
-		a.failure(w, err)
+		a.loginFailure(w, 503, "storage", "Сервис входа временно недоступен. Попробуйте ещё раз позже.", nil)
 		return
 	}
 	a.cookie(w, "cuchi_login", state, 300)
@@ -43,43 +43,43 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie("cuchi_login")
 	state := r.URL.Query().Get("state")
 	if err != nil || len(state) != 43 || subtle.ConstantTimeCompare([]byte(c.Value), []byte(state)) != 1 {
-		apiError(w, 400, "Не удалось подтвердить вход. Начните заново")
+		a.loginFailure(w, 400, "state", "Запрос входа не совпадает с этой вкладкой или cookie входа уже отсутствует.", nil)
 		return
 	}
 	a.cookie(w, "cuchi_login", "", -1)
 	encrypted, err := a.db.ConsumeLogin(r.Context(), cryptobox.Hash(state))
 	if err != nil {
-		apiError(w, 400, "Запрос входа истёк или уже использован")
+		a.loginFailure(w, 400, "flow_consumed", "Запрос входа истёк или уже использован. Такое бывает при повторном открытии ссылки возврата.", nil)
 		return
 	}
 	payload, err := a.box.Open(encrypted, "login:"+state)
 	if err != nil {
-		apiError(w, 400, "Не удалось подтвердить вход")
+		a.loginFailure(w, 400, "flow_invalid", "Не удалось проверить запрос входа.", nil)
 		return
 	}
 	var flow loginFlow
 	if json.Unmarshal(payload, &flow) != nil {
-		apiError(w, 400, "Не удалось подтвердить вход")
+		a.loginFailure(w, 400, "flow_invalid", "Не удалось проверить запрос входа.", nil)
 		return
 	}
 	if r.URL.Query().Get("error") != "" || r.URL.Query().Get("code") == "" {
-		apiError(w, 400, "Вход отменён или не подтверждён Synology")
+		a.loginFailure(w, 400, "provider_cancelled", "Вход отменён или не подтверждён Synology.", nil)
 		return
 	}
 	ctx := oidc.ClientContext(r.Context(), a.client)
 	token, err := a.oauth.Exchange(ctx, r.URL.Query().Get("code"), oauth2.VerifierOption(flow.Verifier))
 	if err != nil {
-		apiError(w, 502, "Synology не подтвердил код входа")
+		a.loginFailure(w, 502, "token_exchange", "Не удалось обменять код входа у Synology. Код мог истечь или уже использоваться; возможен также временный сбой соединения.", err)
 		return
 	}
 	raw, ok := token.Extra("id_token").(string)
 	if !ok {
-		apiError(w, 502, "Synology не вернул ID token")
+		a.loginFailure(w, 502, "id_token_missing", "Synology не вернул подтверждение личности.", nil)
 		return
 	}
 	id, err := a.verifier.Verify(ctx, raw)
 	if err != nil || id.Subject == "" || subtle.ConstantTimeCompare([]byte(id.Nonce), []byte(flow.Nonce)) != 1 {
-		apiError(w, 401, "Ответ Synology не прошёл проверку")
+		a.loginFailure(w, 401, "id_token_invalid", "Ответ Synology не прошёл проверку. Вход не выполнен.", nil)
 		return
 	}
 	var claims struct {
@@ -87,7 +87,7 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 		Groups   []string `json:"groups"`
 	}
 	if err := id.Claims(&claims); err != nil {
-		apiError(w, 401, "Некорректные группы пользователя")
+		a.loginFailure(w, 401, "claims_invalid", "Не удалось проверить группы пользователя Synology.", nil)
 		return
 	}
 	role := roleFor(claims.Groups, a.cfg.AdminGroup, a.cfg.UserGroup)
@@ -96,11 +96,11 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := a.db.UpsertUser(r.Context(), id.Issuer, id.Subject, claims.Username, role)
 	if err != nil {
-		a.failure(w, err)
+		a.loginFailure(w, 503, "storage", "Сервис входа временно недоступен. Попробуйте ещё раз позже.", nil)
 		return
 	}
 	if role == "denied" {
-		apiError(w, 403, "Доступ не разрешён. Обратитесь к администратору Synology")
+		a.loginFailure(w, 403, "access_denied", "У вашей учётной записи нет доступа. Обратитесь к администратору Synology.", nil)
 		return
 	}
 	expires := time.Now().Add(30 * time.Minute)
@@ -109,7 +109,7 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	value := cryptobox.Token()
 	if err := a.db.CreateSession(r.Context(), cryptobox.Hash(value), u.ID, cryptobox.Token(), expires); err != nil {
-		a.failure(w, err)
+		a.loginFailure(w, 503, "storage", "Сервис входа временно недоступен. Попробуйте ещё раз позже.", nil)
 		return
 	}
 	// Rotate an existing browser session on reauthentication.

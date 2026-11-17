@@ -232,7 +232,13 @@ func TestOIDCLoginVerification(t *testing.T) {
 	}
 	const issuer = "https://sso.example.test/webman/sso"
 	var nonce, challenge, mode string
+	var exchanges int
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		exchanges++
+		if mode == "exchange failure" {
+			jsonResponse(w, 400, map[string]string{"error": "invalid_grant", "error_description": "PRIVATE-provider-detail"})
+			return
+		}
 		if err := r.ParseForm(); err != nil {
 			t.Error(err)
 			w.WriteHeader(400)
@@ -268,9 +274,10 @@ func TestOIDCLoginVerification(t *testing.T) {
 	for _, test := range []struct {
 		mode   string
 		status int
-	}{{"ok", 303}, {"wrong nonce", 401}, {"wrong audience", 401}, {"expired", 401}, {"no groups", 403}} {
+	}{{"ok", 303}, {"exchange failure", 502}, {"wrong nonce", 401}, {"wrong audience", 401}, {"expired", 401}, {"no groups", 403}} {
 		t.Run(test.mode, func(t *testing.T) {
 			mode = test.mode
+			exchanges = 0
 			login := request(a, "GET", "/auth/login", identity{}, "")
 			requireStatus(t, login, 302)
 			redirect, err := url.Parse(login.Header().Get("Location"))
@@ -295,6 +302,23 @@ func TestOIDCLoginVerification(t *testing.T) {
 			w := httptest.NewRecorder()
 			a.Handler().ServeHTTP(w, r)
 			requireStatus(t, w, test.status)
+			if exchanges != 1 {
+				t.Fatalf("authorization code exchanged %d times", exchanges)
+			}
+			if test.mode != "ok" {
+				if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(w.Body.String(), "Повторить вход") {
+					t.Fatal("callback error has no browser recovery page")
+				}
+				if strings.Contains(w.Body.String(), "PRIVATE-provider-detail") {
+					t.Fatal("provider detail leaked")
+				}
+				for _, cookie := range w.Result().Cookies() {
+					if cookie.Name == "cuchi_session" && cookie.Value != "" {
+						t.Fatal("failed login created a session")
+					}
+				}
+			}
+
 			if test.mode == "ok" {
 				found := false
 				for _, c := range w.Result().Cookies() {

@@ -52,7 +52,18 @@ func New(ctx context.Context, cfg config.Config, db *store.Store) (*App, error) 
 		if err != nil {
 			return nil, errors.New("OIDC discovery failed; check issuer, TLS and network access")
 		}
-		a.oauth = &oauth2.Config{ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, Endpoint: provider.Endpoint(), RedirectURL: cfg.PublicURL + "/auth/callback", Scopes: []string{oidc.ScopeOpenID, "groups"}}
+		var metadata struct {
+			TokenAuthMethods []string `json:"token_endpoint_auth_methods_supported"`
+		}
+		if err = provider.Claims(&metadata); err != nil {
+			return nil, errors.New("invalid OIDC discovery metadata")
+		}
+		endpoint := provider.Endpoint()
+		endpoint.AuthStyle, err = tokenAuthStyle(metadata.TokenAuthMethods)
+		if err != nil {
+			return nil, err
+		}
+		a.oauth = &oauth2.Config{ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, Endpoint: endpoint, RedirectURL: cfg.PublicURL + "/auth/callback", Scopes: []string{oidc.ScopeOpenID, "groups"}}
 		a.verifier = provider.Verifier(&oidc.Config{ClientID: cfg.ClientID})
 	}
 	return a, nil

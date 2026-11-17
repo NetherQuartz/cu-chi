@@ -5,3 +5,5 @@
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 
 .card-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.card-actions .button{font-size:13px;padding:10px 13px}.form-error{overflow-wrap:anywhere}#profile-qr{width:100%;max-width:512px;height:auto}input[readonly]{opacity:.7}
+
+.auth-error{max-width:580px;margin:8vh auto;padding:28px}.auth-error .brand{margin-bottom:44px}.auth-error h1{font-size:clamp(28px,6vw,40px);line-height:1.15}.auth-error p{line-height:1.6}.auth-error .card-actions{margin:28px 0}.error-reference{display:block;overflow-wrap:anywhere;font-size:13px}

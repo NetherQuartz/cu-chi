@@ -62,3 +62,9 @@ Read AGENTS.md, architecture and operations. Finish CI/runtime publication and v
 - NPM Compose commit `57bb6ea3be6dd2cf8a80359004af727088b65553` passed formatting, vet, race/integration tests, vulnerability scanning, build and multi-architecture publishing: https://github.com/NetherQuartz/cu-chi/actions/runs/43977943295.
 - The browser extension needs file-URL access for uploads. After the owner enabled it, Compose and private environment files uploaded through File Station and Container Manager used the existing project directory.
 - Created the empty `vpn-users` DSM group without granting NAS folder/application permissions. The owner still needs to select its members; normal-user login is not yet verified.
+
+## SSO callback recovery
+
+A user reported an intermittent token-exchange error followed by a successful login after navigating back. The original provider error was discarded, so the cause cannot be established retrospectively. Callback errors now render an HTML recovery page with retry/open-portal links and a correlation reference; server logs retain only stage, whitelisted OAuth error category and upstream HTTP status. They never log codes, tokens, callback URLs, provider bodies or error descriptions. Client authentication is selected from discovery instead of probing/retrying an authorization code after an arbitrary error. Existing state, PKCE, nonce, signature and group checks remain required. Automated tests cover rejection, replay, no session creation on failure and redaction. Real NAS verification of this change is pending.
+
+First VPN CI run `43985412457` passed application tests but failed on Linux fixture ownership before starting the tunnel. Test fixtures now permit read access to the capability-restricted container; production configurations remain root-owned mode 0600. The follow-up CI must pass before deployment.
