@@ -33,12 +33,13 @@ Detailed requirements: [health and notifications](health-notifications.md). Moni
 - Inbox, deduplication, bounded retries and optional scheduled reminders.
 - Notification opens the authenticated device list; no secrets in payloads or URLs.
 
-## Local gateway
+## Local gateway (implemented, acceptance in progress)
 
-- Linux VM preferred where supported; validate Xpenology virtualization/TUN before deciding.
-- Ordinary LAN WG from Keenetic to the gateway, AWG from gateway to a VPS.
-- Explicit direct WAN route for the tunnel transport and management traffic.
-- DNS/IPv6/MTU tests and a user-chosen fail-open/fail-closed policy.
+- Separate Ubuntu VM confirmed available in VMM; administrator SSH deployment from the portal.
+- Ordinary LAN WG from Keenetic to the gateway, AWG from gateway to a VPS; stable LAN keys across uplink reissues.
+- Direct WAN routing for tunnel transport and management traffic; separate client-only routing tables.
+- Owner selected fail-closed. Runtime packet tests cover DNS/HTTPS/MTU, failed uplink and recovery; real router DNS/IPv6/no-fallback policy needs household acceptance.
+- Details and limits: [local gateway](local-gateway.md).
 
 ## Egress and protocol adapters
 
@@ -58,8 +59,8 @@ Monitoring scope additions (2026-11-17): country flag and city for servers; traf
 
 ## Health/push implementation checkpoint
 
-Implemented: periodic isolated AWG DNS/HTTPS probe, debounced incidents/recovery, maintenance, role/audience-scoped inbox, automatic main-server-change reminders, manual outstanding-audience preview/send, final job-failure admin alerts, encrypted VAPID/Web Push with preferences and retries, PWA installation support, current-browser self-test and transport status. Monitoring CI passed at `90865df`. Health/push CI passed, the NAS was upgraded, server probes and desktop Chrome push receipt were confirmed; native mobile acceptance remains pending. Optional scheduled reminders and arbitrary selected-user campaigns remain extensions. WARP, local WG gateway and VLESS remain future adapters.
+Implemented: periodic isolated AWG DNS/HTTPS probe, debounced incidents/recovery, maintenance, role/audience-scoped inbox, automatic main-server-change reminders, manual outstanding-audience preview/send, final job-failure admin alerts, encrypted VAPID/Web Push with preferences and retries, PWA installation support, current-browser self-test and transport status. Monitoring CI passed at `90865df`. Health/push CI passed, the NAS was upgraded, server probes and desktop Chrome push receipt were confirmed; native mobile acceptance remains pending. Optional scheduled reminders and arbitrary selected-user campaigns remain extensions. WARP and VLESS remain future adapters; the local gateway is now implemented with acceptance in progress.
 
 ## Local gateway implementation in progress
 
-The owner confirmed VMM support and chose fail-closed. Implementing an administrator-managed Ubuntu VM registered/deployed by password or saved SSH key from the portal, stable LAN WireGuard identity, independent AWG profile, profile-drift display and CI packet tests. See [local gateway](local-gateway.md). Runtime/CI and real VM/Keenetic acceptance are still pending.
+The owner confirmed VMM support and chose fail-closed. Implementing an administrator-managed Ubuntu VM registered/deployed by password or saved SSH key from the portal, stable LAN WireGuard identity, independent AWG profile, profile-drift display and CI packet tests. See [local gateway](local-gateway.md). Runtime/CI passed at `f72d313`; real VM/Keenetic and interactive UI acceptance are still pending.

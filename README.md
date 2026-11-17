@@ -2,7 +2,7 @@
 
 Self-hosted family VPN management with Synology SSO, individual device profiles and VPS deployment.
 
-**Status: monitoring and Web Push release under acceptance testing.** Synology login, real Ubuntu 26.04 VPS deployment, external tunnel traffic, revocation and NAS backups have passed acceptance. Server/device traffic dashboards, periodic health checks and browser notifications are implemented and tested in CI; rollout of these additions to the NAS and native mobile notification/profile-import checks remain pending.
+**Status: core VPN management, monitoring and desktop Web Push are deployed; managed LAN gateway is under acceptance testing.** Synology login, real Ubuntu 26.04 VPS deployment, external tunnel traffic, revocation, NAS backups/logs, server probes and desktop Chrome notifications have passed acceptance. Native mobile notification/profile-import checks and real VM/Keenetic gateway acceptance remain pending.
 
 ## Current functionality
 
@@ -10,6 +10,7 @@ Self-hosted family VPN management with Synology SSO, individual device profiles 
 - User-scoped device inventory; administrators can see all devices.
 - Administrator-only VPS inventory with encrypted passwords/private keys, reusable SSH keys and pinned host fingerprints (automatic first-use pinning or a manually verified pin).
 - Semi-automatic Ubuntu 24.04 / 26.04 LTS amd64 deployment, durable retries and main-server selection.
+- Administrator-managed LAN gateway VM with password/saved-key SSH deployment, stable Keenetic WireGuard profiles and fail-closed WG → AWG routing; real household acceptance pending.
 - Per-device encrypted keys, `.conf`/QR export, reissue and confirmed peer revocation.
 - Server CPU/RAM/disk/network dashboards and traffic statistics by user, device and device/server pair.
 - Country flags/city metadata, separate profile currency and periodic tunnel/DNS/HTTPS health checks.
@@ -21,7 +22,7 @@ Self-hosted family VPN management with Synology SSO, individual device profiles 
 - PostgreSQL migrations and Docker Compose configuration.
 - CI tests and publishes Linux amd64/arm64 images to GHCR.
 
-See [VPS deployment and profile operations](docs/vpn-operations.md) for prerequisites, migration behavior and limits.
+See [VPS deployment and profile operations](docs/vpn-operations.md) and [local Keenetic gateway](docs/local-gateway.md) for prerequisites, migration behavior and limits.
 
 ## Install on a NAS
 

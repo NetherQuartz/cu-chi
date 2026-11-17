@@ -13,7 +13,7 @@ Keep these files current when behavior, constraints or verification results chan
 - AmneziaWG **3.1 or newer** is mandatory. Do not silently downgrade exported parameters.
 - One independent tunnel device gets its own identity/keys. A routing gateway can represent multiple LAN devices.
 - Browser Web Push reminders are implemented; desktop Chrome receipt is confirmed. iOS requires a Home Screen web app and explicit permission; mobile acceptance remains pending. Manual reminders have no daily cap; deduplicate exact request retries only.
-- A local ordinary WireGuard → AmneziaWG gateway runs in a separate Ubuntu VM for a Keenetic router. The owner chose fail-closed and portal-based SSH deployment (password or saved key), with stable LAN WG keys across VPS profile changes. See docs/local-gateway.md for rollout status.
+- A local ordinary WireGuard → AmneziaWG gateway is implemented for a separate Ubuntu VM for a Keenetic router. The owner chose fail-closed and portal-based SSH deployment (password or saved key), with stable LAN WG keys across VPS profile changes. See docs/local-gateway.md for rollout status.
 - WARP egress and VLESS are future adapters, not assumptions embedded into device records.
 
 ## Implementation

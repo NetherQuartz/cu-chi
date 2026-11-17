@@ -35,7 +35,7 @@ The self-test uses a separate network namespace on the VPS; it cannot prove that
 
 ## User workflow
 
-Add each iOS/Android/Windows/macOS device separately, then choose **Выпустить профиль**. Download `.conf` or scan the QR only after the peer is installed. Import into a compatible AmneziaWG 3.1+ application. A repeated download returns the same keys; **Перевыпустить** creates a new revision and revokes the old one. Do not share one profile between independently connecting devices. A future routing gateway will represent one tunnel endpoint.
+Add each iOS/Android/Windows/macOS device separately, then choose **Выпустить профиль**. Download `.conf` or scan the QR only after the peer is installed. Import into a compatible AmneziaWG 3.1+ application. A repeated download returns the same keys; **Перевыпустить** creates a new revision and revokes the old one. Do not share one profile between independently connecting devices. A managed local gateway represents one tunnel endpoint for clients routed through it; see [local gateway](local-gateway.md).
 
 Selecting a replacement main server does not force users to migrate. They manually reissue their device profiles. On reissue the old profile is immediately scheduled for removal, so there is **no grace period**. If the old VPS is unreachable, its revocation stays pending while a profile on the new VPS can become ready. Unreachable machines may still accept their old keys: removal is confirmed only after reconnecting and applying the desired state. Destroy an abandoned VPS at the provider when it is no longer needed.
 
@@ -66,4 +66,4 @@ VPS configuration persists independently of NAS availability and Docker restarts
 
 Automated tests cover API ownership/CSRF, encryption, retries, concurrent revocation, server migration, SSH host-key rejection/cancellation, real AWG packet transfer, peer reconciliation and revocation. CI exercises the Linux runtime. Real VPS provisioning and imports in the four official client applications require separate acceptance checks; do not infer those from container tests.
 
-Periodic health checks, inbox and Web Push are implemented; NAS rollout and real mobile push acceptance are pending. Grace periods, automated server retirement, WARP, ordinary-WG gateway and VLESS remain future work.
+Periodic health checks, inbox and Web Push are implemented and deployed; real mobile push acceptance remains pending. The ordinary-WG local gateway is implemented with real VM/Keenetic acceptance in progress. Grace periods, automated server retirement, WARP and VLESS remain future work.
