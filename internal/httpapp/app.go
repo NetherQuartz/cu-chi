@@ -99,6 +99,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/me", a.auth(false, func(w http.ResponseWriter, r *http.Request, s store.Session) {
 		jsonResponse(w, 200, map[string]any{"user": s.User, "csrf_token": s.CSRF, "expires_at": s.Expires, "dev_auth": a.cfg.DevAuth})
 	}))
+	mux.HandleFunc("POST /api/session/activity", a.auth(false, a.sessionActivity))
 	mux.HandleFunc("POST /api/logout", a.auth(false, func(w http.ResponseWriter, r *http.Request, s store.Session) {
 		c, _ := r.Cookie("cuchi_session")
 		if err := a.db.DeleteSession(r.Context(), cryptobox.Hash(c.Value)); err != nil {
@@ -137,7 +138,7 @@ func (a *App) Handler() http.Handler {
 	}))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { apiError(w, 404, "Не найдено") })
 	assets, _ := fs.Sub(web, "web")
-	for _, path := range []string{"/{$}", "/app.js", "/monitoring.js", "/notifications.js", "/gateways.js", "/sw.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/badge-96.png", "/countries.json", "/app.css", "/icon.svg", "/bell.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
+	for _, path := range []string{"/{$}", "/app.js", "/session-activity.js", "/monitoring.js", "/notifications.js", "/gateways.js", "/sw.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/badge-96.png", "/countries.json", "/app.css", "/icon.svg", "/bell.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
 		mux.Handle("GET "+path, http.FileServerFS(assets))
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

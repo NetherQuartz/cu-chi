@@ -36,6 +36,7 @@ async function start() {
   $('.stat small').textContent = admin ? 'У всех пользователей' : 'В вашем кабинете';
   await changeView(new URLSearchParams(location.search).get('view')||'devices',{history:'replace'});
   if(state.view!=='devices')api('/api/devices').then(devices=>{state.devices=devices;$('#nav-count').textContent=devices.length;$('#nav-count').hidden=false;}).catch(()=>{$('#nav-count').hidden=true;});
+  recordSessionActivity();
   updateNoticeCount();
  } catch (error) { showLogin(); $('#login-error').textContent = error.message; }
  finally { $('#loading').hidden = true; }

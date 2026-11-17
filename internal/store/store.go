@@ -142,6 +142,15 @@ func (s *Store) Session(ctx context.Context, tokenHash string) (Session, error) 
 	err := s.Pool.QueryRow(ctx, `SELECT u.id::text,u.username,u.role,s.csrf_token,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.role <> 'denied'`, tokenHash).Scan(&v.User.ID, &v.User.Username, &v.User.Role, &v.CSRF, &v.Expires)
 	return v, err
 }
+
+// RenewSession never revives an expired/deleted session, including a race after
+// HTTP authentication. Role denial is checked again in the same statement.
+func (s *Store) RenewSession(ctx context.Context, tokenHash string) (time.Time, error) {
+	var expires time.Time
+	err := s.Pool.QueryRow(ctx, `UPDATE sessions s SET expires_at=GREATEST(s.expires_at,now()+interval '30 minutes') FROM users u WHERE s.token_hash=$1 AND u.id=s.user_id AND u.role<>'denied' AND s.expires_at>now() RETURNING s.expires_at`, tokenHash).Scan(&expires)
+	return expires, err
+}
+
 func (s *Store) DeleteSession(ctx context.Context, tokenHash string) error {
 	_, err := s.Pool.Exec(ctx, "DELETE FROM sessions WHERE token_hash=$1", tokenHash)
 	return err

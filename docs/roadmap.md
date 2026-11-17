@@ -2,7 +2,7 @@
 
 ## Foundation (implemented)
 
-- OIDC and group-based roles.
+- OIDC and group-based roles; 30-minute idle sessions renewed by foreground interaction, not background polling.
 - Isolated device inventory, administrator server inventory, encrypted SSH keys/passwords, reusable generated/imported SSH keys.
 - Audit log, migrations, responsive UI, Compose and GitHub CI/GHCR images.
 - Automated authentication, ownership and encryption tests.

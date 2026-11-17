@@ -3,10 +3,13 @@ package httpapp
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/NetherQuartz/cu-chi/internal/store"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/oauth2"
 
 	"github.com/NetherQuartz/cu-chi/internal/cryptobox"
@@ -150,4 +153,19 @@ func (a *App) devLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	a.cookie(w, "cuchi_session", value, 1800)
 	w.WriteHeader(204)
+}
+
+func (a *App) sessionActivity(w http.ResponseWriter, r *http.Request, _ store.Session) {
+	cookie, _ := r.Cookie("cuchi_session")
+	expires, err := a.db.RenewSession(r.Context(), cryptobox.Hash(cookie.Value))
+	if errors.Is(err, pgx.ErrNoRows) {
+		apiError(w, 401, "Сессия завершена. Войдите снова")
+		return
+	}
+	if err != nil {
+		a.failure(w, err)
+		return
+	}
+	a.cookie(w, "cuchi_session", cookie.Value, int(time.Until(expires).Seconds()))
+	jsonResponse(w, 200, map[string]any{"expires_at": expires})
 }

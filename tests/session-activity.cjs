@@ -1,0 +1,35 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../internal/httpapp/web/session-activity.js'),'utf8');
+
+module.exports=async function testActivity(){
+ let now=0,sequence=0,calls=0,fail=false,held=null;
+ const timers=new Map(),listeners=new Map();
+ const state={me:{csrf_token:'fixture'}};
+ const document={hidden:false,addEventListener:(name,callback)=>listeners.set(name,callback)};
+ const context=vm.createContext({state,document,window:{addEventListener:(name,callback)=>listeners.set(name,callback)},Date:{now:()=>now},setTimeout:(callback,ms)=>{const id=++sequence;timers.set(id,{callback,at:now+ms});return id;},clearTimeout:id=>timers.delete(id),api:async(url,options)=>{calls++;assert.equal(url,'/api/session/activity');assert.equal(options.method,'POST');if(held)await held;if(fail)throw Error('offline');return {expires_at:'renewed'};}});
+ vm.runInContext(source,context);
+ const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
+ const event=async(name,trusted=true)=>{listeners.get(name)({isTrusted:trusted});await settle();};
+ const advance=async(ms)=>{now+=ms;for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.callback();}await settle();};
+ await advance(31*60000);assert.equal(calls,0,'idle timers must not renew');
+ await event('pointerdown',false);assert.equal(calls,0,'synthetic input must not renew');
+ document.hidden=true;await event('keydown');assert.equal(calls,0,'background input must not renew');
+ document.hidden=false;vm.runInContext('recordSessionActivity()',context);await settle();assert.equal(calls,1,'foreground startup renews');
+ assert.equal(state.me.expires_at,'renewed');
+ await advance(1000);await event('input');await event('wheel');assert.equal(calls,1,'burst must be throttled');
+ await advance(29000);assert.equal(calls,2,'last interaction receives one trailing renewal');
+ await advance(31*60000);assert.equal(calls,2,'no repeat renewal without new activity');
+ await event('touchmove');assert.equal(calls,3);
+ await event('input');document.hidden=true;await event('visibilitychange');await advance(30000);assert.equal(calls,3,'hidden tab cancels trailing renewal');
+ document.hidden=false;await event('visibilitychange');assert.equal(calls,4,'returning to foreground renews');
+ await advance(30000);fail=true;await event('keydown');assert.equal(calls,5);
+ await advance(60000);assert.equal(calls,5,'network failures must not create an idle retry loop');
+ fail=false;await event('pointerdown');assert.equal(calls,6,'next activity retries');
+ await advance(30000);let release;held=new Promise(resolve=>release=resolve);await event('pointerdown');assert.equal(calls,7);
+ state.me=null;release();await settle();held=null;await event('input');await advance(60000);assert.equal(calls,7,'logout must not be undone by a late response');
+};
+if(require.main===module)module.exports().then(()=>console.log('Session activity tests passed')).catch(error=>{console.error(error);process.exitCode=1;});
