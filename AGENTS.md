@@ -24,7 +24,7 @@ Keep these files current when behavior, constraints or verification results chan
 - Check ownership in SQL. Mutations require an exact Origin and a session CSRF token.
 - SSH private keys and passwords use AES-256-GCM, bound to server:<id> or ssh-key:<id> associated data. Never return private keys/passwords in APIs; saved-key APIs expose only public material.
 - Applied SQL migrations are immutable; append new numbered migrations.
-- No arbitrary shell commands from request input. Future SSH deployment must verify pinned host keys.
+- No arbitrary shell commands from request input. SSH deployment must verify pinned host keys. The owner authorized TOFU: registration may observe/persist the first host key without authentication; subsequent authentication must use that pin. Manual trusted fingerprints remain an option. Never silently replace a saved pin.
 - Never show fabricated deployment success, VPN profiles, connectivity, metrics or push delivery.
 - Do not commit secrets, real endpoints, account details, private keys, configs, database dumps or private conversation transcripts.
 - Use reserved domains/IPs and dynamically generated ephemeral test keys in fixtures.

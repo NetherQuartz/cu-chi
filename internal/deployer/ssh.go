@@ -131,7 +131,7 @@ func run(ctx context.Context, c *ssh.Client, user, script string, args []string,
 	defer stop()
 	err = session.Run(cmd)
 	if err != nil {
-		for _, code := range []string{"root_required", "ubuntu_2404_required", "amd64_required", "tun_unavailable", "active_ufw", "foreign_container", "foreign_network", "stale_generation", "runtime_start_failed"} {
+		for _, code := range []string{"root_required", "ubuntu_lts_required", "amd64_required", "tun_unavailable", "active_ufw", "foreign_container", "foreign_network", "stale_generation", "runtime_start_failed"} {
 			if strings.Contains(out.b.String(), "CUCHI_ERROR_"+code) {
 				return "", errors.New(code)
 			}
@@ -199,4 +199,30 @@ func trailing(v []string) string {
 		return "\n"
 	}
 	return ""
+}
+
+// DiscoverHostFingerprint observes the first host key without sending credentials.
+// The caller must persist it before any authenticated connection (TOFU).
+func DiscoverHostFingerprint(ctx context.Context, host string, port int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	raw, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return "", errors.New("SSH host discovery connection failed")
+	}
+	defer raw.Close()
+	raw.SetDeadline(time.Now().Add(15 * time.Second))
+	stop := context.AfterFunc(ctx, func() { raw.Close() })
+	defer stop()
+	observed := errors.New("SSH host key observed")
+	var fingerprint string
+	cfg := &ssh.ClientConfig{User: "cuchi-host-check", HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
+		fingerprint = ssh.FingerprintSHA256(key)
+		return observed
+	}}
+	_, _, _, err = ssh.NewClientConn(raw, net.JoinHostPort(host, strconv.Itoa(port)), cfg)
+	if !errors.Is(err, observed) || fingerprint == "" {
+		return "", errors.New("SSH host discovery handshake failed")
+	}
+	return fingerprint, nil
 }

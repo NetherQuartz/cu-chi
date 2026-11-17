@@ -77,6 +77,8 @@ async function loadServers() {
   top.append(node('h3','',server.name),node('span','badge',server.is_default?'Основной сервер':(names[server.vpn_state]||server.vpn_state)));
   card.append(top,node('p','server-address',`${server.ssh_user}@${server.hostname}:${server.ssh_port}`));
   card.append(node('p','small muted',server.ssh_auth_method==='password'?'Вход по паролю':server.ssh_auth_method==='saved_key'?`SSH-ключ: ${state.sshKeys.find(k=>k.id===server.ssh_key_id)?.name||'Сохранённый'}`:'Отдельный SSH-ключ'));
+  card.append(node('p','small muted',server.host_key_policy==='tofu'?'Ключ хоста запомнен при первом подключении':'Ключ хоста указан вручную'));
+  const hostKey=node('details');hostKey.append(node('summary','','Отпечаток SSH-хоста'),node('code','',server.host_key_fingerprint));card.append(hostKey);
   if(server.endpoint) card.append(node('p','small muted',`${server.endpoint}:${server.vpn_port}/udp · AmneziaWG 3.1`));
   const job=state.jobs.find(j=>j.server_id===server.id);
   const busy=state.jobs.some(j=>j.server_id===server.id&&['queued','running'].includes(j.status));
@@ -125,7 +127,7 @@ $('#empty-add-device').addEventListener('click', () => openDialog('device')); $(
 $('#logout').addEventListener('click', async () => { try { await api('/api/logout', { method: 'POST' }); state.me = null; location.reload(); } catch (error) { notify(error.message); } });
 $('#dev-login').addEventListener('click', async event => { event.currentTarget.disabled = true; try { await api('/auth/dev', { method: 'POST' }); await start(); } catch (error) { $('#login-error').textContent = error.message; } finally { $('#dev-login').disabled = false; } });
 bindForm('device', async form => { await api('/api/devices', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form))) }); $('#device-dialog').close(); form.reset(); await loadDevices(); notify('Устройство добавлено'); });
-bindForm('server', async form => { const data = Object.fromEntries(new FormData(form)); data.ssh_port = Number(data.ssh_port); await api('/api/admin/servers', { method: 'POST', body: JSON.stringify(data) }); $('#server-dialog').close(); form.reset(); updateSSHMethod(); await loadServers(); notify('Сервер сохранён'); });
+bindForm('server', async form => { const data = Object.fromEntries(new FormData(form)); data.ssh_port = Number(data.ssh_port); await api('/api/admin/servers', { method: 'POST', body: JSON.stringify(data) }); $('#server-dialog').close(); form.reset(); updateSSHMethod(); updateHostPolicy(); await loadServers(); notify('Сервер сохранён'); });
 bindForm('delete', async () => { await api(`/api/devices/${state.deleting}`, { method: 'DELETE' }); $('#delete-dialog').close(); state.deleting = null; await loadDevices(); notify('Устройство удалено'); });
 function confirmProfile(device,action){
  state.profileAction={device,action}; $('#profile-title').textContent=action==='issue'?'Выпустить новый профиль?':'Отозвать профили?';
@@ -136,7 +138,9 @@ async function serverAction(id,action){try{await api(`/api/admin/servers/${id}/$
 bindForm('deploy',async form=>{const input=Object.fromEntries(new FormData(form));input.port=Number(input.port);await api(`/api/admin/servers/${state.deploying}/deploy`,{method:'POST',body:JSON.stringify(input)});$('#deploy-dialog').close();await loadServers();notify('Деплой поставлен в очередь');});
 bindForm('profile',async()=>{const {device,action}=state.profileAction;await api(`/api/devices/${device.id}/${action==='issue'?'profiles':'revoke'}`,{method:'POST'});$('#profile-dialog').close();await loadDevices();notify('Задание поставлено в очередь');});
 $('#qr-dialog').addEventListener('close',()=>$('#profile-qr').removeAttribute('src'));
-setInterval(async()=>{if(!state.me||state.loading||document.hidden||$('dialog[open]'))return;state.loading=true;try{if(state.view==='servers')await loadServers();if(state.view==='devices')await loadDevices();}catch(e){$('#page-error').textContent=e.message;$('#page-error').hidden=false;}finally{state.loading=false;}},5000);
+setInterval(async()=>{if(!state.me||state.loading||document.hidden||$('dialog[open]')||$('#servers details[open]'))return;state.loading=true;try{if(state.view==='servers')await loadServers();if(state.view==='devices')await loadDevices();}catch(e){$('#page-error').textContent=e.message;$('#page-error').hidden=false;}finally{state.loading=false;}},5000);
+function updateHostPolicy(){const field=$('#server-form').elements.host_key_fingerprint;const manual=$('#server-form').elements.host_key_policy.value==='manual';$('#host-fingerprint-field').hidden=!manual;$('#host-fingerprint-help').hidden=!manual;field.disabled=!manual;field.required=manual;if(!manual)field.value='';}
+$('#server-form').elements.host_key_policy.addEventListener('change',updateHostPolicy);
 function updateSSHMethod() {
  const method=$('#server-form').elements.ssh_auth_method.value;
  $$('[data-ssh-method]').forEach(label=>{const active=label.dataset.sshMethod===method;label.hidden=!active;const field=$('input,textarea,select',label);field.disabled=!active;field.required=active;if(!active&&field.tagName!=='SELECT')field.value='';});

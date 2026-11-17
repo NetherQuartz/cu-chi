@@ -2,7 +2,7 @@
 
 ## Supported target
 
-Use a dedicated Ubuntu 24.04 LTS **amd64** VPS with public IPv4, TUN (`/dev/net/tun`), outbound HTTPS/DNS and root SSH or unrestricted non-interactive sudo. Allow the SSH port and chosen VPN UDP port in the provider firewall. Active UFW is rejected: Docker port publishing has its own forwarding behavior. Existing firewalls, Docker workloads and custom routing are outside this first supported target.
+Use a dedicated Ubuntu 24.04 or 26.04 LTS **amd64** VPS with public IPv4, TUN (`/dev/net/tun`), outbound HTTPS/DNS and root SSH or unrestricted non-interactive sudo. Allow the SSH port and chosen VPN UDP port in the provider firewall. Active UFW is rejected: Docker port publishing has its own forwarding behavior. Existing firewalls, Docker workloads and custom routing are outside this first supported target.
 
 A small family deployment can start with 1–2 vCPU, 1–2 GB RAM and 10–20 GB disk; actual throughput depends on the VPS. The NAS needs no TUN, Docker socket or VPN privileges.
 
@@ -14,13 +14,13 @@ Choose an SSH access method in **Серверы**:
 
 Reusing a key is convenient for replacing VPSs; separate keys remain possible. A saved key cannot be deleted while a server references it. Deleting an unused key only removes the portal record, not public keys on remote hosts. Reassigning/rotating credentials for an existing server is not yet implemented. Retain database and master-key backups because generated private keys are not exported.
 
-Get each server's **host fingerprint** from a trusted provider console (this is different from the public login key):
+By default, **Запомнить при первом подключении** discovers the host key without sending a password/private-key authentication, then persists its SHA-256 fingerprint when registering the VPS. All jobs verify that saved fingerprint. This TOFU mode does not independently verify the initial host; changes later are rejected, never auto-accepted. For independent first-connection verification, select **Указать проверенный отпечаток** and obtain the **host fingerprint** from a trusted provider console (different from the public login key):
 
 ```sh
 ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
 ```
 
-Supply the `SHA256:…` value to Củ Chi. A key collected over the same untrusted connection is not independent verification. Host-key mismatch aborts before remote commands. Keep credentials out of Git and chat transcripts.
+Supply the `SHA256:…` value to Củ Chi. A key collected over the same untrusted connection is not independent verification; that is the explicit tradeoff of TOFU. Host-key mismatch aborts before remote commands. Keep credentials out of Git and chat transcripts.
 
 ## Administrator workflow
 
@@ -56,7 +56,7 @@ QR and configuration files contain private keys. Downloads are authenticated, ow
 
 ## Persistence and recovery
 
-Migration `002_vpn.sql` adds profiles, job state and the main-server preference. Migration `003_ssh_access.sql` adds reusable SSH keys and password authentication; old server ciphertext and associated data stay intact. The legacy `encrypted_private_key` column stores an encrypted key or password according to `ssh_auth_method`. Do not downgrade the application after using saved keys/passwords: older workers cannot authenticate those records. Back up PostgreSQL and the unchanged master key before upgrading. Do not roll back to the inventory-only application after profiles are issued: it cannot manage or revoke them. Restore a matched database/application backup deliberately, then reconcile VPS state; restoring a database alone does not undo remote peers.
+Migration `002_vpn.sql` adds profiles, job state and the main-server preference. Migration `004_host_key_policy.sql` records TOFU/manual provenance. Migration `003_ssh_access.sql` adds reusable SSH keys and password authentication; old server ciphertext and associated data stay intact. The legacy `encrypted_private_key` column stores an encrypted key or password according to `ssh_auth_method`. Do not downgrade the application after using saved keys/passwords: older workers cannot authenticate those records. Back up PostgreSQL and the unchanged master key before upgrading. Do not roll back to the inventory-only application after profiles are issued: it cannot manage or revoke them. Restore a matched database/application backup deliberately, then reconcile VPS state; restoring a database alone does not undo remote peers.
 
 Keys and addresses are allocated transactionally before SSH. Retries reuse them. The worker holds a database session leadership lock; remote operations are serialized with `flock`, and monotonically increasing generations fence stale writes. Per-attempt tokens reject late completions. A restarted worker recovers unfinished jobs. Snapshot completion cannot turn a concurrently revoked profile back into a downloadable profile.
 

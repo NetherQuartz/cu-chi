@@ -55,3 +55,11 @@ Use VAPID and a durable transactional notification outbox with bounded retries/b
 Payloads contain an event identifier, generic title/body and same-origin navigation target only. Never include private keys, profiles, SSH credentials, public VPS IPs or sensitive diagnostic details. A push-service acceptance response means accepted for delivery, not received/read/imported. Service workers must display received push events and must not cache authenticated API responses or profile files.
 
 Acceptance includes real iOS Home Screen and Android browser subscriptions, denied permission, expired subscription, offline delivery/expiry, deduplication, recovery suppression, correct per-user targeting and administrator-only operational alerts.
+
+## Per-server resource dashboard (owner reference, 2026-11-17)
+
+For administrators, provide five compact metric cards with current values and real time-series charts: outgoing/incoming network rates, CPU usage/core count, RAM used/total, and root filesystem used/total. Show sent/received totals with an explicit counter period, plus a selectable history interval (initially hour/day). Follow the existing Củ Chi design rather than copying the reference's theme.
+
+Collect host-level metrics server-side. Network rates should use the VPS external/default-route interface and monotonic byte deltas; exclude Docker/veth/loopback to avoid double counting. Clearly label traffic as VPS interface traffic (includes management/probe/other traffic), not per-user VPN consumption. CPU should use interval deltas with correct idle/iowait accounting; memory should use MemAvailable. Handle reboots, interface changes and counter resets with gaps/reset markers instead of negative rates. Time-series retention and sampling are bounded. No fabricated initial chart data.
+
+Display collection time, sample age and stale/unavailable state. Missing data is not zero utilization and does not prove VPN failure. Charts should preserve gaps. Keep host addresses, detailed resource metrics and infrastructure failures admin-only; ordinary users receive the separate summarized health/profile-currency view. This dashboard is planned, not yet implemented.

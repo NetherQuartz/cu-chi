@@ -25,6 +25,7 @@ import (
 
 	"github.com/NetherQuartz/cu-chi/internal/config"
 	"github.com/NetherQuartz/cu-chi/internal/cryptobox"
+	"github.com/NetherQuartz/cu-chi/internal/deployer"
 	"github.com/NetherQuartz/cu-chi/internal/store"
 )
 
@@ -253,15 +254,16 @@ var hostnameRE = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0
 
 func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Session) {
 	var input struct {
-		Name        string `json:"name"`
-		Hostname    string `json:"hostname"`
-		SSHPort     int    `json:"ssh_port"`
-		SSHUser     string `json:"ssh_user"`
-		Fingerprint string `json:"host_key_fingerprint"`
-		PrivateKey  string `json:"private_key"`
-		Password    string `json:"password"`
-		AuthMethod  string `json:"ssh_auth_method"`
-		SSHKeyID    string `json:"ssh_key_id"`
+		Name          string `json:"name"`
+		Hostname      string `json:"hostname"`
+		SSHPort       int    `json:"ssh_port"`
+		SSHUser       string `json:"ssh_user"`
+		Fingerprint   string `json:"host_key_fingerprint"`
+		HostKeyPolicy string `json:"host_key_policy"`
+		PrivateKey    string `json:"private_key"`
+		Password      string `json:"password"`
+		AuthMethod    string `json:"ssh_auth_method"`
+		SSHKeyID      string `json:"ssh_key_id"`
 	}
 	if !decode(w, r, &input) {
 		return
@@ -272,9 +274,24 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 		apiError(w, 400, "Проверьте название, адрес и параметры SSH")
 		return
 	}
-	fingerprint, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(input.Fingerprint, "SHA256:"))
-	if err != nil || len(fingerprint) != 32 || !strings.HasPrefix(input.Fingerprint, "SHA256:") {
-		apiError(w, 400, "Нужен отпечаток ключа хоста в формате SHA256:…")
+	if input.HostKeyPolicy == "" {
+		input.HostKeyPolicy = "manual"
+	}
+	var err error
+	switch input.HostKeyPolicy {
+	case "manual":
+		fingerprint, e := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(input.Fingerprint, "SHA256:"))
+		if e != nil || len(fingerprint) != 32 || !strings.HasPrefix(input.Fingerprint, "SHA256:") {
+			apiError(w, 400, "Нужен отпечаток ключа хоста в формате SHA256:…")
+			return
+		}
+	case "tofu":
+		if input.Fingerprint != "" {
+			apiError(w, 400, "Выберите автоматическое получение или ручной отпечаток")
+			return
+		}
+	default:
+		apiError(w, 400, "Неизвестный способ проверки ключа хоста")
 		return
 	}
 	if input.AuthMethod == "" {
@@ -308,7 +325,14 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 		return
 	}
 	defer clear(secret)
-	v := store.Server{ID: cryptobox.ID(), Name: input.Name, Hostname: input.Hostname, SSHPort: input.SSHPort, SSHUser: input.SSHUser, Fingerprint: input.Fingerprint, AuthMethod: input.AuthMethod, SSHKeyID: input.SSHKeyID}
+	if input.HostKeyPolicy == "tofu" {
+		input.Fingerprint, err = deployer.DiscoverHostFingerprint(r.Context(), input.Hostname, input.SSHPort)
+		if err != nil {
+			apiError(w, 502, "Не удалось получить SSH-ключ хоста. Проверьте адрес, порт и доступность VPS с NAS")
+			return
+		}
+	}
+	v := store.Server{ID: cryptobox.ID(), Name: input.Name, Hostname: input.Hostname, SSHPort: input.SSHPort, SSHUser: input.SSHUser, Fingerprint: input.Fingerprint, AuthMethod: input.AuthMethod, SSHKeyID: input.SSHKeyID, HostKeyPolicy: input.HostKeyPolicy}
 	var encrypted []byte
 	if secret != nil {
 		encrypted = a.box.Seal(secret, "server:"+v.ID)

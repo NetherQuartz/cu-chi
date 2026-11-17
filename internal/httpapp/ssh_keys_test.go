@@ -7,13 +7,16 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"github.com/NetherQuartz/cu-chi/internal/cryptobox"
 	"github.com/NetherQuartz/cu-chi/internal/deployer"
 	"github.com/NetherQuartz/cu-chi/internal/store"
 	"github.com/NetherQuartz/cu-chi/internal/worker"
 	"golang.org/x/crypto/ssh"
+	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 type credentialCheck struct {
@@ -183,4 +186,68 @@ func TestImportAndDeleteUnusedSSHKey(t *testing.T) {
 	requireStatus(t, request(a, "DELETE", "/api/admin/ssh-keys/"+k.ID, admin, ""), 204)
 	requireStatus(t, request(a, "DELETE", "/api/admin/ssh-keys/"+k.ID, admin, ""), 404)
 	requireStatus(t, request(a, "POST", "/api/admin/ssh-keys", admin, `{"name":"Invalid","mode":"import","private_key":"invalid"}`), 400)
+}
+
+func TestAutomaticHostPinBeforeAuthentication(t *testing.T) {
+	a := testApp(t)
+	admin := account(t, a, "admin")
+	_, private, _ := ed25519.GenerateKey(rand.Reader)
+	signer, _ := ssh.NewSignerFromKey(private)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	done := make(chan bool, 1)
+	go func() {
+		raw, err := listener.Accept()
+		if err != nil {
+			done <- false
+			return
+		}
+		defer raw.Close()
+		raw.SetDeadline(time.Now().Add(5 * time.Second))
+		authenticated := false
+		cfg := &ssh.ServerConfig{PasswordCallback: func(ssh.ConnMetadata, []byte) (*ssh.Permissions, error) {
+			authenticated = true
+			return nil, errors.New("must not authenticate during discovery")
+		}}
+		cfg.AddHostKey(signer)
+		conn, _, _, err := ssh.NewServerConn(raw, cfg)
+		if err == nil {
+			conn.Close()
+		}
+		done <- authenticated
+	}()
+	body, _ := json.Marshal(map[string]any{"name": "TOFU test", "hostname": "127.0.0.1", "ssh_port": listener.Addr().(*net.TCPAddr).Port, "ssh_user": "root", "host_key_policy": "tofu", "ssh_auth_method": "password", "password": "never sent in discovery"})
+	response := request(a, "POST", "/api/admin/servers", admin, string(body))
+	requireStatus(t, response, 201)
+	if <-done {
+		t.Fatal("credentials sent before persisting host pin")
+	}
+	var server store.Server
+	if json.Unmarshal(response.Body.Bytes(), &server) != nil {
+		t.Fatal("invalid response")
+	}
+	if server.Fingerprint != ssh.FingerprintSHA256(signer.PublicKey()) || server.HostKeyPolicy != "tofu" {
+		t.Fatal("host observation not retained")
+	}
+	target, err := a.db.Target(context.Background(), server.ID)
+	if err != nil || target.Fingerprint != server.Fingerprint {
+		t.Fatal("worker does not use saved pin")
+	}
+	servers, err := a.db.Servers(context.Background())
+	if err != nil || len(servers) != 1 || servers[0].HostKeyPolicy != "tofu" {
+		t.Fatal("policy not persisted")
+	}
+	listener.Close()
+	failed := request(a, "POST", "/api/admin/servers", admin, string(body))
+	requireStatus(t, failed, 502)
+	if strings.Contains(failed.Body.String(), "never sent") {
+		t.Fatal("password leaked on discovery failure")
+	}
+	servers, err = a.db.Servers(context.Background())
+	if err != nil || len(servers) != 1 || servers[0].Fingerprint != server.Fingerprint {
+		t.Fatal("failed discovery changed saved pin")
+	}
 }
