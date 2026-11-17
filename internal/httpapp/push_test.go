@@ -180,7 +180,12 @@ func TestSelfPushTargetsOnlyCurrentBrowser(t *testing.T) {
 		requireStatus(t, request(a, "POST", "/api/push/subscription", u, pushBody(endpoint)), 204)
 	}
 	requireStatus(t, request(a, "POST", "/api/push/test", other, `{"endpoint":"`+endpoints[0]+`"}`), 404)
-	requireStatus(t, request(a, "POST", "/api/push/test", u, `{"endpoint":"`+endpoints[0]+`"}`), 202)
+	response := request(a, "POST", "/api/push/test", u, `{"endpoint":"`+endpoints[0]+`"}`)
+	requireStatus(t, response, 202)
+	var acknowledgement map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &acknowledgement); err != nil || acknowledgement["status"] != "accepted" {
+		t.Fatal("test response must be JSON for the browser", err)
+	}
 	if err := a.db.QueuePush(ctx); err != nil {
 		t.Fatal(err)
 	}

@@ -66,3 +66,4 @@
 #notifications-view .server-card > p {margin-top:10px;line-height:1.6}
 #notifications-view .server-card > .card-actions {margin-block:16px}
 #notifications-view .server-card > button {margin-top:16px}
+.nav-bell {display:inline-block;width:20px;height:20px;flex-shrink:0;background:currentColor;mask:url('/bell.svg') center/contain no-repeat;-webkit-mask:url('/bell.svg') center/contain no-repeat}

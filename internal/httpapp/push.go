@@ -99,6 +99,6 @@ func (a *App) pushRoutes(mux *http.ServeMux) {
 		if a.vpnError(w, a.db.TestPush(r.Context(), s.User, cryptobox.Hash(v.Endpoint))) {
 			return
 		}
-		w.WriteHeader(202)
+		jsonResponse(w, 202, map[string]string{"status": "accepted"})
 	}))
 }

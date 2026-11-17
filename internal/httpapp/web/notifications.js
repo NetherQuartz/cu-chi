@@ -18,7 +18,7 @@ function maintenanceButton(server){
  const b=node('button','button secondary',active?'Завершить обслуживание':'Обслуживание на час');
  b.addEventListener('click',async()=>{b.disabled=true;try{await api(`/api/admin/servers/${server.id}/maintenance`,{method:'POST',body:JSON.stringify({minutes:active?0:60})});await loadServers();}catch(e){notify(e.message);b.disabled=false;}});return b;
 }
-async function updateNoticeCount(){try{const items=await api('/api/notifications');const count=items.filter(x=>!x.read_at).length;$('#notice-count').textContent=count||'';return items;}catch{return [];}}
+async function updateNoticeCount(){try{const items=await api('/api/notifications');const count=items.filter(x=>!x.read_at).length;$('#notice-count').textContent=count||'';$('#notice-count').hidden=count===0;return items;}catch{return [];}}
 async function loadNotifications(){
  const items=await updateNoticeCount(),box=$('#notifications');box.replaceChildren();
  if(!items.length)box.append(node('div','empty-state','Уведомлений пока нет'));
@@ -60,7 +60,7 @@ async function enablePush(){
 async function disablePush(){const reg=await getPushRegistration(),sub=await reg?.pushManager.getSubscription();if(sub){await api('/api/push/subscription',{method:'DELETE',body:JSON.stringify({endpoint:sub.endpoint})});await sub.unsubscribe();}await showPushState();}
 for(const id of ['enable-push','renew-push'])$('#'+id).addEventListener('click',()=>enablePush().catch(e=>notify(e.message)));
 $('#disable-push').addEventListener('click',()=>disablePush().catch(e=>notify(e.message)));
-$('#test-push').addEventListener('click',async()=>{try{const reg=await getPushRegistration(),sub=await reg?.pushManager.getSubscription();if(!sub)throw new Error('Сначала подключите этот браузер');await api('/api/push/test',{method:'POST',body:JSON.stringify({endpoint:sub.endpoint})});notify('Тест поставлен в очередь. Это ещё не подтверждение доставки.');await loadNotifications();}catch(e){notify(e.message);}});
+$('#test-push').addEventListener('click',async()=>{try{const reg=await getPushRegistration(),sub=await reg?.pushManager.getSubscription();if(!sub)throw new Error('Сначала подключите этот браузер');await api('/api/push/test',{method:'POST',body:JSON.stringify({endpoint:sub.endpoint})});notify('Тест запрошен. Повторные нажатия в течение минуты объединяются.');await loadNotifications();}catch(e){notify(e.message);}});
 $('#push-preferences').addEventListener('submit',async e=>{e.preventDefault();const p={};for(const key of ['outages','recovery','reminders','operations'])p[key]=e.target.elements[key].checked;try{await api('/api/push/preferences',{method:'PUT',body:JSON.stringify(p)});notify('Настройки уведомлений сохранены');}catch(err){notify(err.message);}});
 $('#preview-reminders').addEventListener('click',async()=>{try{const users=await api('/api/admin/reminders');$('#reminder-audience').textContent=users.length?users.map(u=>u.username).join(', '):'Все действующие профили используют основной сервер.';$('#send-reminders').hidden=!users.length;$('#send-reminders').textContent=`Напомнить пользователям (${users.length})`;}catch(e){notify(e.message);}});
 $('#send-reminders').addEventListener('click',async()=>{const b=$('#send-reminders');b.disabled=true;try{const result=await api('/api/admin/reminders',{method:'POST'});notify(`Создано напоминаний: ${result.created}. Повторные за сегодня пропущены.`);b.hidden=true;await loadNotifications();}catch(e){notify(e.message);}finally{b.disabled=false;}});
