@@ -104,9 +104,12 @@ sleep 600`
 	url := "http://" + targetIP + ":9090/payload"
 	transfer := func() {
 		t.Helper()
-		data := run("exec", client, "curl", "--fail", "--silent", "--show-error", "--retry", "2", "--max-time", "8", url)
+		// Curl may report a transient retry after the deliberately removed WG
+		// peer. Keep diagnostics separate from the actual response bytes.
+		run("exec", client, "curl", "--fail", "--silent", "--show-error", "--retry", "2", "--max-time", "8", "--output", "/tmp/transfer", url)
+		data := run("exec", client, "cat", "/tmp/transfer")
 		if data != strings.Repeat("x", 131072) {
-			t.Fatal("large transfer incomplete")
+			t.Fatalf("large transfer incomplete: %d bytes", len(data))
 		}
 	}
 	deny := func() {
