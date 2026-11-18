@@ -43,8 +43,8 @@ Detailed requirements: [health and notifications](health-notifications.md). Moni
 
 ## Egress and protocol adapters
 
-- Validate WARP forwarding end-to-end, including UDP/QUIC and failure behavior.
-- Start with a server-level egress policy.
+- WARP real external AWG forwarding, UDP DNS/TLS, large transfers, restart and failure/rollback passed on a dedicated Ubuntu 26.04 VPS; QUIC-specific and native-client UI checks remain.
+- Per-server direct/WARP policy is implemented, direct by default. NAS rollout is pending; no family VPS was switched.
 - Add Xray/VLESS through a separate adapter and profile exporter.
 
 ## Deliberately outside the first release
@@ -74,3 +74,5 @@ The owner confirmed VMM support and chose fail-closed. Implementing an administr
 2026-11-18 WARP implementation: owner authorized a per-server on/off control. Experimental direct/WARP desired/applied state, encrypted cached registration, container-only policy routing, fail-closed behavior, apply rollback and WARP-aware health checks are implemented. No spare VPS exists; Cloudflare registration and real WARP forwarding/QUIC remain acceptance gates. No production egress was changed. Isolated kernel-WG packet CI tests are separate from Cloudflare acceptance.
 
 WARP implementation verification completed in CI 44290879338 (`6eac641`): isolated kernel-WG routing/failure/recovery tests and ordinary AWG/gateway regression suites passed; images published. Real Cloudflare registration, native-client WARP egress/QUIC and actual-VPS rollout remain pending a spare server. NAS has not yet been updated to this release.
+
+Real WARP acceptance completed on an owner-supplied dedicated VPS (2026-11-18): published `6eac641` runtime registered with Cloudflare; external AWG traffic reported warp=on with a changed public IP and unchanged client profile. UDP DNS, HTTPS/128 KiB transfer, restart, interface-loss fail-closed/recovery and deliberate failed-enable rollback passed. No code fix or new runtime release was needed. Owner confirms NAS is not yet updated. Test deployment was removed so the VPS can be registered normally in the portal; original credentials are preserved. See warp-egress.md for exact coverage and remaining QUIC/native-client UI/real NAS-toggle limits.

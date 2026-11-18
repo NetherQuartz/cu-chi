@@ -14,7 +14,7 @@ Keep these files current when behavior, constraints or verification results chan
 - One independent tunnel device gets its own identity/keys. A routing gateway can represent multiple LAN devices.
 - Browser Web Push reminders are implemented; desktop Chrome, Android and iPhone receipt are confirmed by the owner. iOS requires a Home Screen web app and explicit permission; Android status-bar badge acceptance is confirmed. Native iOS Critical Alerts are not provided by Web Push. Manual reminders have no daily cap; deduplicate exact request retries only.
 - A local ordinary WireGuard → AmneziaWG gateway is implemented for a separate Ubuntu VM for a Keenetic router. The owner chose fail-closed and portal-based SSH deployment (password or saved key), with stable LAN WG keys across VPS profile changes. See docs/local-gateway.md for rollout status.
-- Per-server WARP egress is experimental (docs/warp-egress.md), direct by default. No real Cloudflare/VPS acceptance yet; the owner has no spare test VPS. Do not enable WARP on the live family server for testing. VLESS remains a future adapter.
+- Per-server WARP egress is experimental (docs/warp-egress.md), direct by default. Real Cloudflare registration, external AWG DNS/TLS/large-transfer traffic, restart, fail-closed recovery and failed-enable rollback passed on a dedicated Ubuntu 26.04 VPS. Family-server WARP remains off; never use it for fault injection. Native-client UI/QUIC acceptance and NAS rollout remain pending. VLESS remains a future adapter.
 
 ## Implementation
 
