@@ -59,7 +59,7 @@ Monitoring scope additions (2026-11-17): country flag and city for servers; traf
 
 ## Health/push implementation checkpoint
 
-Implemented: periodic isolated AWG DNS/HTTPS probe, debounced incidents/recovery, maintenance, role/audience-scoped inbox, automatic main-server-change reminders, manual outstanding-audience preview/send, final job-failure admin alerts, encrypted VAPID/Web Push with preferences and retries, PWA installation support, current-browser self-test and transport status. Monitoring CI passed at `90865df`. Health/push CI passed, the NAS was upgraded, server probes and desktop Chrome/Android push receipt were confirmed; Android status-bar badge acceptance is confirmed; iOS acceptance remains pending. Optional scheduled reminders and arbitrary selected-user campaigns remain extensions. WARP and VLESS remain future adapters; the local gateway is now implemented with acceptance in progress.
+Implemented: periodic isolated AWG DNS/HTTPS probe, debounced incidents/recovery, maintenance, role/audience-scoped inbox, automatic main-server-change reminders, manual outstanding-audience preview/send, final job-failure admin alerts, encrypted VAPID/Web Push with preferences and retries, PWA installation support, current-browser self-test and transport status. Monitoring CI passed at `90865df`. Health/push CI passed, the NAS was upgraded, server probes and desktop Chrome/Android push receipt were confirmed; Android status-bar badge acceptance is confirmed; iPhone push receipt is now confirmed by the owner. Optional scheduled reminders and arbitrary selected-user campaigns remain extensions. WARP and VLESS remain future adapters; the local gateway is now implemented with acceptance in progress.
 
 ## Local gateway implementation in progress
 
@@ -67,3 +67,6 @@ The owner confirmed VMM support and chose fail-closed. Implementing an administr
 
 
 2026-11-18 field feedback: owner confirmed successful server replacement and gradual profile reissuance. Follow-up separates informational unreachable old-server cleanup from current profile failures and adds initiator context to administrator operation notifications. Does not introduce server retirement, automatic deletion or grace periods; real revocation remains required. Publication/rollout status is recorded in handoff.
+
+
+2026-11-18 owner acceptance update: ordinary internet routing through the real Keenetic gateway and iPhone push receipt are confirmed. The owner did not separately enumerate VM/VPS-loss, DNS or IPv6 failure tests, so those specific assertions remain unverified. Restoration from the actual NAS backup has not been rehearsed. WARP remains an assessment/design topic; no deployment or activation is authorized by the effort/impact question alone.
