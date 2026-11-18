@@ -3,7 +3,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = { me: null, view: 'devices', devices: [], servers: [], deleting: null, profiles: [], vpn: {}, jobs: [], sshKeys: [], deploying: null, profileAction: null, loading: false };
 const platforms = { ios: 'iOS / iPadOS', android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux', gateway: 'Домашний шлюз' };
-const actions = { 'notifications.reminded':'Отправлены напоминания', 'server.maintenance_changed':'Режим обслуживания изменён', 'server.location_changed':'Местоположение изменено', 'ssh_key.created':'SSH-ключ сохранён', 'ssh_key.deleted':'SSH-ключ удалён', 'profile.issued':'Профиль запрошен', 'profile.revocation_requested':'Запрошен отзыв профилей', 'server.check_queued':'Запрошена проверка SSH', 'server.deploy_queued':'Запрошен деплой', 'server.default_changed':'Основной сервер изменён', 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
+const actions = { 'server.egress_warp_queued':'Запрошен выход через WARP', 'server.egress_direct_queued':'Запрошен прямой выход', 'notifications.reminded':'Отправлены напоминания', 'server.maintenance_changed':'Режим обслуживания изменён', 'server.location_changed':'Местоположение изменено', 'ssh_key.created':'SSH-ключ сохранён', 'ssh_key.deleted':'SSH-ключ удалён', 'profile.issued':'Профиль запрошен', 'profile.revocation_requested':'Запрошен отзыв профилей', 'server.check_queued':'Запрошена проверка SSH', 'server.deploy_queued':'Запрошен деплой', 'server.default_changed':'Основной сервер изменён', 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
 let toastTimer, renderedSSHKeys;
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 function notify(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4000); }
@@ -93,8 +93,9 @@ async function loadServers() {
   if(job) {const labels={queued:'В очереди',running:'Выполняется',succeeded:'Выполнено',failed:cleanupPending?'Отзыв на старом сервере отложен':'Ошибка'};card.append(node('p','small muted',`${labels[job.status]} · попытка ${job.attempts}`));}
   if(server.vpn_error){
    if(cleanupPending){const details=node('details','profile-cleanup');details.append(node('summary','','Старый сервер: отзыв ключей пока не подтверждён'),node('p','small muted','Это не препятствует выпуску профилей на новом основном сервере. Старые ключи пока считаются неотозванными.'),node('p','small muted',server.vpn_error));card.append(details);}
-   else card.append(node('p','form-error',server.vpn_error));
+   else card.append(node('p','form-error',egressError(server.vpn_error)));
   }
+  card.append(egressControl(server,busy));
   const controls=node('div','card-actions');
   const check=node('button','button secondary','Проверить SSH');check.disabled=busy;check.addEventListener('click',()=>serverAction(server.id,'check'));controls.append(check);
   const deploy=node('button','button secondary',server.vpn_state==='ready'?'Повторить применение':'Развернуть');deploy.disabled=busy;deploy.addEventListener('click',()=>{

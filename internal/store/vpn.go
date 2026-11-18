@@ -41,9 +41,9 @@ type Job struct {
 }
 type Target struct {
 	Server
-	EncryptedKey, EncryptedSettings []byte
-	Generation                      int64
-	Profiles                        []Profile
+	EncryptedKey, EncryptedSettings, EncryptedWarp []byte
+	Generation                                     int64
+	Profiles                                       []Profile
 }
 
 // Mutations are short transactions. The worker never holds this lock over SSH.
@@ -71,7 +71,7 @@ func enqueue(ctx context.Context, tx pgx.Tx, serverID, actor, kind string) (stri
 // A migration cleanup cannot install a new peer on this server. Keep revocation
 // unconfirmed, but distinguish it from a failed installation on the replacement.
 // Explicit revocation without a replacement and mixed install/remove jobs still alert.
-const migrationCleanupSQL = `s.id<>(SELECT default_server_id FROM vpn_preferences)
+const migrationCleanupSQL = `s.egress_mode=s.applied_egress_mode AND s.id<>(SELECT default_server_id FROM vpn_preferences)
  AND EXISTS(SELECT 1 FROM profiles p WHERE p.server_id=s.id AND p.state='revoking')
  AND NOT EXISTS(SELECT 1 FROM profiles p WHERE p.server_id=s.id AND p.desired AND p.state='pending')
  AND NOT EXISTS(SELECT 1 FROM profiles p WHERE p.server_id=s.id AND p.state='revoking'
@@ -307,7 +307,7 @@ func (s *Store) Target(ctx context.Context, id string) (Target, error) {
 	}
 	defer tx.Rollback(ctx)
 	var t Target
-	err = tx.QueryRow(ctx, `SELECT s.id::text,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,COALESCE(k.encrypted_private_key,s.encrypted_private_key),s.encrypted_vpn_settings,s.endpoint,s.vpn_port,s.desired_generation,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,'') FROM servers s LEFT JOIN ssh_keys k ON k.id=s.ssh_key_id WHERE s.id=$1`, id).Scan(&t.ID, &t.Hostname, &t.SSHPort, &t.SSHUser, &t.Fingerprint, &t.EncryptedKey, &t.EncryptedSettings, &t.Endpoint, &t.VPNPort, &t.Generation, &t.AuthMethod, &t.SSHKeyID)
+	err = tx.QueryRow(ctx, `SELECT s.id::text,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,COALESCE(k.encrypted_private_key,s.encrypted_private_key),s.encrypted_vpn_settings,s.endpoint,s.vpn_port,s.desired_generation,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,''),s.egress_mode,s.applied_egress_mode,s.encrypted_warp_config FROM servers s LEFT JOIN ssh_keys k ON k.id=s.ssh_key_id WHERE s.id=$1`, id).Scan(&t.ID, &t.Hostname, &t.SSHPort, &t.SSHUser, &t.Fingerprint, &t.EncryptedKey, &t.EncryptedSettings, &t.Endpoint, &t.VPNPort, &t.Generation, &t.AuthMethod, &t.SSHKeyID, &t.EgressMode, &t.AppliedEgressMode, &t.EncryptedWarp)
 	if err != nil {
 		return t, err
 	}
@@ -406,7 +406,7 @@ func (s *Store) Finish(ctx context.Context, j Job, t Target, failure string) err
 		if j.Kind == "check" {
 			_, err = tx.Exec(ctx, "UPDATE servers SET checked_at=now(),vpn_error='',vpn_state=CASE WHEN vpn_state='new' THEN 'checked' ELSE vpn_state END WHERE id=$1", j.ServerID)
 		} else {
-			_, err = tx.Exec(ctx, "UPDATE servers SET vpn_state='ready',vpn_error='',applied_generation=$2,checked_at=now() WHERE id=$1", j.ServerID, t.Generation)
+			_, err = tx.Exec(ctx, "UPDATE servers SET vpn_state='ready',vpn_error='',applied_generation=$2,applied_egress_mode=$3,checked_at=now() WHERE id=$1", j.ServerID, t.Generation, t.EgressMode)
 			if err != nil {
 				return err
 			}

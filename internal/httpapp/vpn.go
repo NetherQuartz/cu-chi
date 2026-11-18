@@ -15,6 +15,30 @@ import (
 )
 
 func (a *App) vpnRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/admin/servers/{id}/egress", a.auth(true, func(w http.ResponseWriter, r *http.Request, s store.Session) {
+		id := r.PathValue("id")
+		if !uuidRE.MatchString(id) {
+			apiError(w, 404, "Сервер не найден")
+			return
+		}
+		var v struct {
+			Mode        string `json:"mode"`
+			AcceptTerms bool   `json:"accept_terms"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		if (v.Mode != "direct" && v.Mode != "warp") || v.Mode == "warp" && !v.AcceptTerms {
+			apiError(w, 400, "Выберите режим выхода и подтвердите условия WARP")
+			return
+		}
+		j, err := a.db.QueueEgress(r.Context(), s.User, id, v.Mode)
+		if a.vpnError(w, err) {
+			return
+		}
+		jsonResponse(w, 202, map[string]string{"job_id": j})
+	}))
+
 	mux.HandleFunc("GET /api/profiles", a.auth(false, func(w http.ResponseWriter, r *http.Request, s store.Session) {
 		v, err := a.db.Profiles(r.Context(), s.User)
 		if err != nil {

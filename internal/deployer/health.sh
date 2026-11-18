@@ -41,8 +41,11 @@ tar --no-same-owner -xf - -C "$base/health"
 printf '%s\n' "$peer" > "$base/health-peer"
 docker exec -i cuchi-awg sh -c 'umask 077; cat > /tmp/cuchi-health-psk' < "$base/health/psk"
 if ! docker exec cuchi-awg awg set awg0 peer "$peer" preshared-key /tmp/cuchi-health-psk allowed-ips 10.66.255.254/32 >/dev/null; then echo HEALTH_DATA; exit 0; fi
+egress=direct
+[ ! -s "$base/config/egress-mode" ] || egress=$(cat "$base/config/egress-mode")
+case "$egress" in direct|warp) ;; *) exit 1;; esac
 # timeout bounds the remote operation even if the NAS disconnects.
-if timeout --signal=TERM --kill-after=5s 70s docker run --rm --pull=never --name "$name" --label "io.cuchi.health=$server_id" --network cuchi-awg \
+if timeout --signal=TERM --kill-after=5s 70s docker run --rm --pull=never -e "CUCHI_EXPECT_WARP=$egress" --name "$name" --label "io.cuchi.health=$server_id" --network cuchi-awg \
  --cap-drop ALL --cap-add NET_ADMIN --device /dev/net/tun --security-opt no-new-privileges \
  --read-only --tmpfs /run --tmpfs /tmp -v "$base/health:/config:ro" --entrypoint /usr/local/bin/cuchi-probe "$image" >/dev/null 2>&1; then
  outcome=HEALTH_OK

@@ -79,3 +79,10 @@
 @media(min-width:1200px){.traffic-filters:has(>[data-admin][hidden]){grid-template-columns:repeat(4,minmax(0,1fr))}}
 
 @media(forced-colors:active){.traffic-filters select{appearance:auto;background-image:none}}
+
+.egress-control { margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+.egress-control p { margin: 8px 0; }
+#egress-warp-help .check-row { display: block; font-size: 14px; line-height: 1.6; }
+#egress-warp-help input { width: auto; margin: 0 8px 0 0; }
+
+#egress-warp-help a { text-decoration: underline; }

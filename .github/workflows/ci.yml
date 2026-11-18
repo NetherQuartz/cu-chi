@@ -95,6 +95,11 @@ jobs:
         run: |
           sudo modprobe wireguard
           go test -v -count=1 ./internal/gateway
+      - name: Test per-server WARP routing with isolated WireGuard exit
+        env:
+          WARP_TEST_IMAGE: cuchi-awg:test
+          AWG_TEST_EGRESS: "true"
+        run: go test -v -count=1 ./internal/egress
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: github.event_name != 'pull_request'
         with:

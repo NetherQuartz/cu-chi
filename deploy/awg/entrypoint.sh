@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 umask 077
+iptables -P FORWARD DROP
+iptables -I FORWARD 1 -i awg0 -j DROP
 mkdir -p /run/amneziawg
 amneziawg-go -f awg0 >/tmp/awg.log 2>&1 &
 pid=$!
@@ -14,5 +16,8 @@ iptables -A FORWARD -i awg0 -o eth0 -s 10.66.0.0/16 -j ACCEPT
 iptables -A FORWARD -i eth0 -o awg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 iptables -P FORWARD DROP
 iptables -t nat -A POSTROUTING -s 10.66.0.0/16 -o eth0 -j MASQUERADE
+mode=direct
+[ ! -s /config/egress-mode ] || mode=$(cat /config/egress-mode)
+/usr/local/bin/cuchi-egress "$mode"
 touch /run/cuchi-ready
 wait "$pid"

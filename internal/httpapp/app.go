@@ -138,7 +138,7 @@ func (a *App) Handler() http.Handler {
 	}))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { apiError(w, 404, "Не найдено") })
 	assets, _ := fs.Sub(web, "web")
-	for _, path := range []string{"/{$}", "/app.js", "/session-activity.js", "/monitoring.js", "/notifications.js", "/gateways.js", "/sw.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/badge-96.png", "/countries.json", "/app.css", "/icon.svg", "/bell.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
+	for _, path := range []string{"/{$}", "/app.js", "/egress.js", "/session-activity.js", "/monitoring.js", "/notifications.js", "/gateways.js", "/sw.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/badge-96.png", "/countries.json", "/app.css", "/icon.svg", "/bell.svg", "/platform-ios.svg", "/platform-android.svg", "/platform-windows.svg", "/platform-macos.svg", "/platform-linux.svg", "/platform-gateway.svg"} {
 		mux.Handle("GET "+path, http.FileServerFS(assets))
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

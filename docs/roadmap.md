@@ -70,3 +70,5 @@ The owner confirmed VMM support and chose fail-closed. Implementing an administr
 
 
 2026-11-18 owner acceptance update: ordinary internet routing through the real Keenetic gateway and iPhone push receipt are confirmed. The owner did not separately enumerate VM/VPS-loss, DNS or IPv6 failure tests, so those specific assertions remain unverified. Restoration from the actual NAS backup has not been rehearsed. WARP remains an assessment/design topic; no deployment or activation is authorized by the effort/impact question alone.
+
+2026-11-18 WARP implementation: owner authorized a per-server on/off control. Experimental direct/WARP desired/applied state, encrypted cached registration, container-only policy routing, fail-closed behavior, apply rollback and WARP-aware health checks are implemented. No spare VPS exists; Cloudflare registration and real WARP forwarding/QUIC remain acceptance gates. No production egress was changed. Isolated kernel-WG packet CI tests are separate from Cloudflare acceptance.

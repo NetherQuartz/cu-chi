@@ -11,7 +11,9 @@ ip route add 10.66.0.1/32 dev probe0
 ip route add 1.1.1.1/32 dev probe0
 # A successful handshake alone does not prove forwarding or DNS work.
 for attempt in 1 2 3; do
- if dig @1.1.1.1 example.com A +short +time=5 +tries=1 | grep -Eq '^[0-9]+\.' && curl --fail --silent --show-error --connect-timeout 5 --max-time 15 https://1.1.1.1/cdn-cgi/trace >/dev/null; then exit 0; fi
+ if dig @1.1.1.1 example.com A +short +time=5 +tries=1 | grep -Eq '^[0-9]+\.' && curl --fail --silent --show-error --connect-timeout 5 --max-time 15 https://1.1.1.1/cdn-cgi/trace > /tmp/trace; then
+  if [ "${CUCHI_EXPECT_WARP:-direct}" != warp ] || grep -Eq '^warp=(on|plus)$' /tmp/trace; then exit 0; fi
+ fi
  sleep 1
 done
 exit 1

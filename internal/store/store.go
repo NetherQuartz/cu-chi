@@ -37,24 +37,26 @@ type Device struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type Server struct {
-	MigrationCleanup bool      `json:"migration_cleanup"`
-	CountryCode      string    `json:"country_code"`
-	City             string    `json:"city"`
-	HostKeyPolicy    string    `json:"host_key_policy"`
-	AuthMethod       string    `json:"ssh_auth_method"`
-	SSHKeyID         string    `json:"ssh_key_id,omitempty"`
-	ID               string    `json:"id"`
-	Name             string    `json:"name"`
-	Hostname         string    `json:"hostname"`
-	SSHPort          int       `json:"ssh_port"`
-	SSHUser          string    `json:"ssh_user"`
-	Fingerprint      string    `json:"host_key_fingerprint"`
-	CreatedAt        time.Time `json:"created_at"`
-	Endpoint         string    `json:"endpoint"`
-	VPNPort          int       `json:"vpn_port"`
-	VPNState         string    `json:"vpn_state"`
-	VPNError         string    `json:"vpn_error"`
-	Default          bool      `json:"is_default"`
+	EgressMode        string    `json:"egress_mode"`
+	AppliedEgressMode string    `json:"applied_egress_mode"`
+	MigrationCleanup  bool      `json:"migration_cleanup"`
+	CountryCode       string    `json:"country_code"`
+	City              string    `json:"city"`
+	HostKeyPolicy     string    `json:"host_key_policy"`
+	AuthMethod        string    `json:"ssh_auth_method"`
+	SSHKeyID          string    `json:"ssh_key_id,omitempty"`
+	ID                string    `json:"id"`
+	Name              string    `json:"name"`
+	Hostname          string    `json:"hostname"`
+	SSHPort           int       `json:"ssh_port"`
+	SSHUser           string    `json:"ssh_user"`
+	Fingerprint       string    `json:"host_key_fingerprint"`
+	CreatedAt         time.Time `json:"created_at"`
+	Endpoint          string    `json:"endpoint"`
+	VPNPort           int       `json:"vpn_port"`
+	VPNState          string    `json:"vpn_state"`
+	VPNError          string    `json:"vpn_error"`
+	Default           bool      `json:"is_default"`
 }
 type Event struct {
 	ID         int64     `json:"id"`
@@ -237,7 +239,7 @@ func (s *Store) DeleteDevice(ctx context.Context, u User, id string) error {
 	return tx.Commit(ctx)
 }
 func (s *Store) Servers(ctx context.Context) ([]Server, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT s.id::text,s.name,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,s.created_at,s.endpoint,s.vpn_port,s.vpn_state,s.vpn_error,s.host_key_policy,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,''),COALESCE(v.default_server_id=s.id,false),s.country_code,s.city,COALESCE(("+migrationCleanupSQL+"),false) FROM servers s CROSS JOIN vpn_preferences v ORDER BY s.created_at DESC")
+	rows, err := s.Pool.Query(ctx, "SELECT s.id::text,s.name,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,s.created_at,s.endpoint,s.vpn_port,s.vpn_state,s.vpn_error,s.host_key_policy,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,''),COALESCE(v.default_server_id=s.id,false),s.country_code,s.city,s.egress_mode,s.applied_egress_mode,COALESCE(("+migrationCleanupSQL+"),false) FROM servers s CROSS JOIN vpn_preferences v ORDER BY s.created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +247,7 @@ func (s *Store) Servers(ctx context.Context) ([]Server, error) {
 	out := []Server{}
 	for rows.Next() {
 		var v Server
-		if err := rows.Scan(&v.ID, &v.Name, &v.Hostname, &v.SSHPort, &v.SSHUser, &v.Fingerprint, &v.CreatedAt, &v.Endpoint, &v.VPNPort, &v.VPNState, &v.VPNError, &v.HostKeyPolicy, &v.AuthMethod, &v.SSHKeyID, &v.Default, &v.CountryCode, &v.City, &v.MigrationCleanup); err != nil {
+		if err := rows.Scan(&v.ID, &v.Name, &v.Hostname, &v.SSHPort, &v.SSHUser, &v.Fingerprint, &v.CreatedAt, &v.Endpoint, &v.VPNPort, &v.VPNState, &v.VPNError, &v.HostKeyPolicy, &v.AuthMethod, &v.SSHKeyID, &v.Default, &v.CountryCode, &v.City, &v.EgressMode, &v.AppliedEgressMode, &v.MigrationCleanup); err != nil {
 			return nil, err
 		}
 		out = append(out, v)

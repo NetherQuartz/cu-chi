@@ -37,12 +37,13 @@ type Credentials struct {
 	Key, Password                       []byte
 }
 type Payload struct {
-	ServerID, Image          string
-	Port                     int
-	Generation               int64
-	Config, WithProbe, Probe string
-	PublicKeys               []string
-	Install                  bool
+	EgressMode, WarpConfig, WarpAddress string
+	ServerID, Image                     string
+	Port                                int
+	Generation                          int64
+	Config, WithProbe, Probe            string
+	PublicKeys                          []string
+	Install                             bool
 }
 type SSH struct{}
 
@@ -131,7 +132,7 @@ func run(ctx context.Context, c *ssh.Client, user, script string, args []string,
 	defer stop()
 	err = session.Run(cmd)
 	if err != nil {
-		for _, code := range []string{"root_required", "ubuntu_lts_required", "amd64_required", "tun_unavailable", "active_ufw", "foreign_container", "foreign_network", "stale_generation", "runtime_start_failed", "gateway_lan_ip_missing", "wireguard_module_missing", "gateway_dedicated_vm_required", "gateway_egress_failed", "gateway_dns_failed", "gateway_https_failed"} {
+		for _, code := range []string{"egress_rollback_failed", "warp_registration_failed", "warp_configuration_invalid", "warp_egress_failed", "root_required", "ubuntu_lts_required", "amd64_required", "tun_unavailable", "active_ufw", "foreign_container", "foreign_network", "stale_generation", "runtime_start_failed", "gateway_lan_ip_missing", "wireguard_module_missing", "gateway_dedicated_vm_required", "gateway_egress_failed", "gateway_dns_failed", "gateway_https_failed"} {
 			if strings.Contains(out.b.String(), "CUCHI_ERROR_"+code) {
 				return "", errors.New(code)
 			}
@@ -156,6 +157,15 @@ func (SSH) Check(ctx context.Context, c Credentials) error {
 	return err
 }
 func (SSH) Apply(ctx context.Context, c Credentials, p Payload) error {
+	if p.EgressMode == "" {
+		p.EgressMode = "direct"
+	}
+	if p.EgressMode != "direct" && p.EgressMode != "warp" {
+		return errors.New("invalid egress mode")
+	}
+	if p.EgressMode == "warp" && (p.WarpConfig == "" || p.WarpAddress == "") {
+		return errors.New("warp_configuration_invalid")
+	}
 	if !idRE.MatchString(p.ServerID) || !ValidImage(p.Image) || p.Port < 1 || p.Port > 65535 || p.Generation < 1 {
 		return errors.New("invalid deployment configuration")
 	}
@@ -173,7 +183,7 @@ func (SSH) Apply(ctx context.Context, c Credentials, p Payload) error {
 	}
 	var b bytes.Buffer
 	tw := tar.NewWriter(&b)
-	for _, f := range []struct{ name, data string }{{"awg0.conf", p.Config}, {"with-probe.conf", p.WithProbe}, {"probe.conf", p.Probe}, {"peers", strings.Join(p.PublicKeys, "\n") + trailing(p.PublicKeys)}} {
+	for _, f := range []struct{ name, data string }{{"egress-mode", p.EgressMode + "\n"}, {"warp.conf", p.WarpConfig}, {"warp-address", p.WarpAddress + "\n"}, {"awg0.conf", p.Config}, {"with-probe.conf", p.WithProbe}, {"probe.conf", p.Probe}, {"peers", strings.Join(p.PublicKeys, "\n") + trailing(p.PublicKeys)}} {
 		if err = tw.WriteHeader(&tar.Header{Name: f.name, Mode: 0600, Size: int64(len(f.data))}); err != nil {
 			return err
 		}

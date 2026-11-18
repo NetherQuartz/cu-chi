@@ -10,6 +10,7 @@ import (
 	"github.com/NetherQuartz/cu-chi/internal/awg"
 	"github.com/NetherQuartz/cu-chi/internal/cryptobox"
 	"github.com/NetherQuartz/cu-chi/internal/deployer"
+	"github.com/NetherQuartz/cu-chi/internal/egress"
 	"github.com/NetherQuartz/cu-chi/internal/store"
 	"github.com/NetherQuartz/cu-chi/internal/telemetry"
 	"github.com/jackc/pgx/v5"
@@ -160,8 +161,40 @@ func (w *Worker) Execute(ctx context.Context, j store.Job, t store.Target) error
 		peers = append(peers, awg.Peer{Public: k.Public, PSK: k.PSK, Address: p.Address})
 		public = append(public, k.Public)
 	}
+
+	var warp egress.Config
+	if t.EgressMode == "warp" {
+		if len(t.EncryptedWarp) == 0 {
+			remote, ok := w.Remote.(interface {
+				RegisterWarp(context.Context, deployer.Credentials, string, string) (string, error)
+			})
+			if !ok {
+				return errors.New("WARP registration is unavailable")
+			}
+			raw, err := remote.RegisterWarp(ctx, c, t.ID, w.Image)
+			if err != nil {
+				return err
+			}
+			if _, err = egress.Parse(raw); err != nil {
+				return errors.New("warp_configuration_invalid")
+			}
+			t.EncryptedWarp, err = w.DB.SaveWarpConfig(ctx, t.ID, w.Box.Seal([]byte(raw), "warp:"+t.ID))
+			if err != nil {
+				return errors.New("cannot save WARP configuration")
+			}
+		}
+		raw, err := w.Box.Open(t.EncryptedWarp, "warp:"+t.ID)
+		if err != nil {
+			return errors.New("cannot decrypt WARP configuration")
+		}
+		warp, err = egress.Parse(string(raw))
+		clear(raw)
+		if err != nil {
+			return errors.New("warp_configuration_invalid")
+		}
+	}
 	probe := awg.NewKeys()
-	p := deployer.Payload{ServerID: t.ID, Image: w.Image, Port: t.VPNPort, Generation: t.Generation, Config: s.Server(peers), WithProbe: s.Server(append(peers, awg.Peer{Public: probe.Public, PSK: probe.PSK, Address: awg.ProbeAddress})), Probe: s.Probe(probe), PublicKeys: public, Install: j.Kind == "deploy"}
+	p := deployer.Payload{EgressMode: t.EgressMode, WarpConfig: warp.WireGuard, WarpAddress: warp.Address, ServerID: t.ID, Image: w.Image, Port: t.VPNPort, Generation: t.Generation, Config: s.Server(peers), WithProbe: s.Server(append(peers, awg.Peer{Public: probe.Public, PSK: probe.PSK, Address: awg.ProbeAddress})), Probe: s.Probe(probe), PublicKeys: public, Install: j.Kind == "deploy"}
 	return w.Remote.Apply(ctx, c, p)
 }
 
