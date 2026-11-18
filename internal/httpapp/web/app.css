@@ -86,3 +86,5 @@
 #egress-warp-help input { width: auto; margin: 0 8px 0 0; }
 
 #egress-warp-help a { text-decoration: underline; }
+#egress-dialog form > p, #egress-warp-help { margin-top: 12px; }
+#egress-warp-help input { min-height: 0; width: 18px; height: 18px; vertical-align: middle; }
