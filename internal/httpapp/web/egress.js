@@ -13,11 +13,11 @@ function egressControl(server,busy) {
  const controls=node('div','card-actions');
  for(const [mode,label] of [['direct','Прямой выход'],['warp','Выход через WARP']]){
   const button=node('button','button secondary',label);
-  button.disabled=busy||(mode===desired&&mode===applied&&!server.vpn_error);
+  button.disabled=mode===desired&&(busy||(mode===applied&&!server.vpn_error));
   button.addEventListener('click',()=>{
    egressSelection={id:server.id,mode};
    $('#egress-title').textContent=mode==='warp'?'Включить WARP?':'Включить прямой выход?';
-   $('#egress-description').textContent=`Сервер «${server.name}». ${mode==='warp'?'VPN-трафик будет выходить в интернет через Cloudflare.':'VPN-трафик будет выходить в интернет с IP этого VPS.'}`;
+   $('#egress-description').textContent=`Сервер «${server.name}». ${mode==='warp'?'VPN-трафик будет выходить в интернет через Cloudflare.':'VPN-трафик будет выходить в интернет с IP этого VPS.'}${busy?' Смена выполнится после текущего задания.':''}`;
    $('#egress-warp-help').hidden=mode!=='warp';
    const check=$('#egress-form').elements.accept_terms;check.checked=false;check.required=mode==='warp';check.disabled=mode!=='warp';
    openDialog('egress');
