@@ -58,7 +58,7 @@ func (w *PushWorker) tick(ctx context.Context) {
 				if j.Kind == "outage" || j.Kind == "management" {
 					ttl = 300
 				}
-				code, _ = push.Send(ctx, w.Client, sub, string(private), public, w.Origin, j.NotificationID, j.Kind, j.Severity, min(ttl, max(1, int(time.Until(j.Expires).Seconds()))))
+				code, _ = push.Send(ctx, w.Client, sub, string(private), public, w.Origin, j.NotificationID, j.Kind, j.Severity, min(ttl, max(1, int(time.Until(j.Expires).Seconds()))), push.Context{ActorNames: j.ActorNames, ServerName: j.ServerName})
 			}
 		}
 	}

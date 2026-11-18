@@ -1,6 +1,6 @@
 # Session handoff
 
-Last updated: 2026-11-17. This file intentionally contains no private infrastructure details or credentials.
+Last updated: 2026-11-18. This file intentionally contains no private infrastructure details or credentials.
 
 ## Owner decisions
 
@@ -243,3 +243,14 @@ Warm-up fix release `479dbc9f56c1acf5f241627ace31a77c1b069622` passed all CI job
 Owner confirmed the NAS update. Portal reload showed the new translated gateway error. Queued one deployment through the normal admin UI using the existing ready profile (revision 1, no reissuance). The job succeeded and the card now shows applied with its successful tunnel/DNS/HTTPS check timestamp. Independent pinned SSH/sudo verification found the gateway container running and healthy; bound-source DNS/HTTPS probe passed. IPv4 FORWARD still only permits WG→AWG plus established return traffic, table 200 retains unreachable default, IPv6 FORWARD remains DROP. Full household Keenetic policy/failure testing is not implied by these checks.
 
 Temporary SSH diagnostic source/scripts were removed; original credential files preserved. The screenshot of the applied gateway remains outside Git. No production database edits or SSH host-pin changes were made. NAS app `479dbc9` rollout is now confirmed; VM deployment uses the newly published gateway runtime. Next owner-facing step is Keenetic profile import/policy acceptance, including DNS, IPv6, gateway/VPS loss and recovery; do not claim this has already passed.
+
+
+## Migration cleanup and operation context (2026-11-18)
+
+Owner reports successful real server replacement/profile reissuance, but old unreachable-server removals made ready replacement profiles look broken and generated generic administrator failure pushes. Current-profile attention now applies only to a desired pending profile with a server operation error. Unconfirmed older removals stay visible in an expandable neutral explanation, including server names and the fact that old keys remain unrevoked. A ready replacement remains downloadable; device deletion still waits for real revocation. Expanded device explanations survive polling. Stale monitoring samples remain explicitly stale with neutral styling, rather than a red form error.
+
+Only a non-default sync with remaining revocations, no pending desired installation there, a desired replacement on another server for every revoking device, and an SSH connection failure/operation timeout becomes informational migration_cleanup. It remains a failed job and unconfirmed revocation; no push is sent for that informational event. Explicit revocation without a replacement, mixed pending installs, deploy/check failures, host-key mismatches and other errors still alert. Ordinary outage/recovery push audiences now require a desired profile on that server; old pending removal alone no longer qualifies a migrated user.
+
+Additive migration 013 records all actors in merged server jobs and snapshots their usernames into administrator operation notices. Pushes for administrator operations include bounded, control-flattened initiator/server labels; ordinary users do not receive this context. Legacy jobs can recover only their original initiator, not all users of historically merged requests. Existing matching unreachable migration-cleanup notices are reclassified as information on upgrade, so queued pushes are suppressed as well. Gateway notices retain their existing generic actor context; no initiator is guessed from VM ownership.
+
+Validation: isolated local Chrome preview covered ready/revoking device cards, expandable old-server explanation, administrator operation actors, desktop and 390px mobile layout. Fixture screenshot stays outside Git. Full PostgreSQL/race suite includes migration cleanup versus explicit revocation/new-profile failure, merged actors, audience isolation, actual pre-013 schema upgrade with existing profiles/notices, unchanged ready profile export and no legacy cleanup push. No production profiles, jobs, subscriptions or VPN processes were changed during validation. CI publication/owner-operated NAS update pending. No AWG/gateway runtime change or redeployment is required. Application recreation briefly pauses the portal; established VPN tunnels remain independent. Preserve DB/master key and the normal completed NAS backup. Migration is additive; older app can run against the expanded schema, but would restore the previous noisy behavior.

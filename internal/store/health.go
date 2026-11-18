@@ -123,7 +123,7 @@ func (s *Store) SaveProbe(ctx context.Context, id string, generation int64, at t
 			nKind = "outage"
 			severity = "critical"
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,server_id,incident_id) SELECT u.id,$2,$3,$4,$1,$5 FROM users u WHERE u.role='admin' OR (u.role='user' AND $3='outage' AND EXISTS(SELECT 1 FROM profiles p JOIN devices d ON d.id=p.device_id WHERE p.server_id=$1 AND p.state<>'revoked' AND d.user_id=u.id)) ON CONFLICT DO NOTHING`, id, incident+":open", nKind, severity, incident)
+		_, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,server_id,incident_id) SELECT u.id,$2,$3,$4,$1,$5 FROM users u WHERE u.role='admin' OR (u.role='user' AND $3='outage' AND EXISTS(SELECT 1 FROM profiles p JOIN devices d ON d.id=p.device_id WHERE p.server_id=$1 AND p.desired AND d.user_id=u.id)) ON CONFLICT DO NOTHING`, id, incident+":open", nKind, severity, incident)
 		if err != nil {
 			return err
 		}
@@ -160,6 +160,8 @@ func (s *Store) Maintenance(ctx context.Context, u User, id string, minutes int)
 }
 
 type Notification struct {
+	ActorNames string     `json:"actor_names,omitempty"`
+	Operation  string     `json:"operation,omitempty"`
 	GatewayID  string     `json:"gateway_id,omitempty"`
 	ID         string     `json:"id"`
 	Kind       string     `json:"kind"`
@@ -170,7 +172,7 @@ type Notification struct {
 }
 
 func (s *Store) Inbox(ctx context.Context, u User) ([]Notification, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT n.id::text,n.kind,n.severity,COALESCE(s.name,g.name,''),n.created_at,n.read_at,COALESCE(n.gateway_id::text,'') FROM notifications n LEFT JOIN servers s ON s.id=n.server_id LEFT JOIN gateways g ON g.id=n.gateway_id WHERE n.user_id=$1 AND ($2 OR n.kind NOT IN ('management','job_failed')) ORDER BY n.created_at DESC LIMIT 100`, u.ID, u.Role == "admin")
+	rows, err := s.Pool.Query(ctx, `SELECT n.id::text,n.kind,n.severity,COALESCE(s.name,g.name,''),n.created_at,n.read_at,COALESCE(n.gateway_id::text,''),n.actor_names,n.operation FROM notifications n LEFT JOIN servers s ON s.id=n.server_id LEFT JOIN gateways g ON g.id=n.gateway_id WHERE n.user_id=$1 AND ($2 OR n.kind NOT IN ('management','job_failed')) ORDER BY n.created_at DESC LIMIT 100`, u.ID, u.Role == "admin")
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +180,7 @@ func (s *Store) Inbox(ctx context.Context, u User) ([]Notification, error) {
 	out := []Notification{}
 	for rows.Next() {
 		var n Notification
-		if err = rows.Scan(&n.ID, &n.Kind, &n.Severity, &n.ServerName, &n.CreatedAt, &n.ReadAt, &n.GatewayID); err != nil {
+		if err = rows.Scan(&n.ID, &n.Kind, &n.Severity, &n.ServerName, &n.CreatedAt, &n.ReadAt, &n.GatewayID, &n.ActorNames, &n.Operation); err != nil {
 			return nil, err
 		}
 		out = append(out, n)

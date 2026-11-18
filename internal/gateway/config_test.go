@@ -36,7 +36,7 @@ func TestLANIdentityAndOverlap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(lan.RouterConfig, "Jc") || !strings.Contains(lan.ServerConfig, "10.77.0.2/32, 192.168.50.0/24") || !strings.Contains(lan.RouterConfig, "192.168.50.10:51820") {
+	if strings.Contains(lan.RouterConfig, "\nJc =") || !strings.Contains(lan.ServerConfig, "10.77.0.2/32, 192.168.50.0/24") || !strings.Contains(lan.RouterConfig, "192.168.50.10:51820") {
 		t.Fatal("invalid standard WG configuration")
 	}
 	for _, c := range []string{"0.0.0.0/0", "10.66.0.0/16", "10.77.0.0/24", "192.168.50.2/24", "192.168.0.0/15", "::/0", "192.168.0.0/24;id"} {

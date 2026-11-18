@@ -62,8 +62,21 @@ func enqueue(ctx context.Context, tx pgx.Tx, serverID, actor, kind string) (stri
 	var id string
 	err := tx.QueryRow(ctx, `INSERT INTO jobs(server_id,created_by,kind) VALUES($1,$2,$3)
  ON CONFLICT(server_id) WHERE status='queued' DO UPDATE SET kind=CASE WHEN jobs.kind='deploy' OR excluded.kind='deploy' THEN 'deploy' WHEN jobs.kind='sync' OR excluded.kind='sync' THEN 'sync' ELSE 'check' END, run_after=now(), attempts=0,error='' RETURNING id::text`, serverID, actor, kind).Scan(&id)
+	if err == nil {
+		_, err = tx.Exec(ctx, `INSERT INTO job_actors(job_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, id, actor)
+	}
 	return id, err
 }
+
+// A migration cleanup cannot install a new peer on this server. Keep revocation
+// unconfirmed, but distinguish it from a failed installation on the replacement.
+// Explicit revocation without a replacement and mixed install/remove jobs still alert.
+const migrationCleanupSQL = `s.id<>(SELECT default_server_id FROM vpn_preferences)
+ AND EXISTS(SELECT 1 FROM profiles p WHERE p.server_id=s.id AND p.state='revoking')
+ AND NOT EXISTS(SELECT 1 FROM profiles p WHERE p.server_id=s.id AND p.desired AND p.state='pending')
+ AND NOT EXISTS(SELECT 1 FROM profiles p WHERE p.server_id=s.id AND p.state='revoking'
+   AND NOT EXISTS(SELECT 1 FROM profiles replacement WHERE replacement.device_id=p.device_id AND replacement.desired AND replacement.server_id<>s.id))`
+
 func (s *Store) QueueServer(ctx context.Context, u User, id, kind, endpoint string, port int, settings []byte) (string, error) {
 	tx, err := vpnTx(ctx, s)
 	if err != nil {
@@ -262,7 +275,7 @@ func (s *Store) Revoke(ctx context.Context, u User, deviceID string) error {
 	return tx.Commit(ctx)
 }
 func (s *Store) Profiles(ctx context.Context, u User) ([]Profile, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT p.id::text,p.device_id::text,p.server_id::text,s.name,p.revision,p.address,p.public_key,p.state,p.desired,p.created_at,s.vpn_error<>'' FROM profiles p JOIN devices d ON d.id=p.device_id JOIN servers s ON s.id=p.server_id WHERE (d.user_id=$1 OR $2) AND p.state<>'revoked' ORDER BY p.revision DESC`, u.ID, u.Role == "admin")
+	rows, err := s.Pool.Query(ctx, `SELECT p.id::text,p.device_id::text,p.server_id::text,s.name,p.revision,p.address,p.public_key,p.state,p.desired,p.created_at,(p.desired AND p.state='pending' AND s.vpn_error<>'') FROM profiles p JOIN devices d ON d.id=p.device_id JOIN servers s ON s.id=p.server_id WHERE (d.user_id=$1 OR $2) AND p.state<>'revoked' ORDER BY p.revision DESC`, u.ID, u.Role == "admin")
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +382,18 @@ func (s *Store) Finish(ctx context.Context, j Job, t Target, failure string) err
 			return err
 		}
 		if status == "failed" && !pending {
-			if _, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,server_id) SELECT id,'job:'||$1::text,'job_failed','warning',$2 FROM users WHERE role='admin' ON CONFLICT DO NOTHING`, j.ID, j.ServerID); err != nil {
+			severity, operation := "warning", j.Kind
+			var cleanup bool
+			if err = tx.QueryRow(ctx, `SELECT COALESCE((`+migrationCleanupSQL+`),false) FROM servers s WHERE s.id=$1`, j.ServerID).Scan(&cleanup); err != nil {
+				return err
+			}
+			if j.Kind == "sync" && cleanup && (failure == "SSH connection failed" || failure == "SSH operation timed out or cancelled") {
+				severity, operation = "info", "migration_cleanup"
+			}
+			if _, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,server_id,actor_names,operation)
+ SELECT id,'job:'||$1::text,'job_failed',$3,$2,
+ COALESCE((SELECT string_agg(u.username, ', ' ORDER BY u.username,u.id) FROM job_actors a JOIN users u ON u.id=a.user_id WHERE a.job_id=$1::uuid),''),$4
+ FROM users WHERE role='admin' ON CONFLICT DO NOTHING`, j.ID, j.ServerID, severity, operation); err != nil {
 				return err
 			}
 		}

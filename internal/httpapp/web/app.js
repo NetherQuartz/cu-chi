@@ -43,6 +43,7 @@ async function start() {
 }
 async function loadDevices() {
  [state.devices,state.profiles,state.vpn,state.services,state.health] = await Promise.all([api('/api/devices'),api('/api/profiles'),api('/api/vpn'),api('/api/services'),api('/api/health')]);
+ const expandedCleanup=new Set($$('#devices .profile-cleanup[open]').map(el=>el.dataset.deviceId));
  const container = $('#devices'); container.replaceChildren();
  $('#device-empty').hidden = state.devices.length > 0;
  $('#device-count').textContent = state.devices.length; $('#nav-count').textContent = state.devices.length; $('#nav-count').hidden=false;
@@ -59,9 +60,10 @@ async function loadDevices() {
   const applying=current?.state==='pending'&&!current.needs_attention;
   const meta = node('div', 'device-meta'); meta.append(node('span', '', device.owner), node('span', 'badge', current ? (current.needs_attention?'Требуется внимание':current.state === 'ready' ? 'Профиль готов' : 'Применяется на сервере') : 'Профиль не выпущен')); card.append(meta);
   if(applying){const progress=node('div','profile-progress');progress.setAttribute('role','status');const spinner=node('span','spinner');spinner.setAttribute('aria-hidden','true');const text=node('div');text.append(node('strong','','Готовим профиль…'),node('p','small muted','Применяем настройки на сервере. Скачивание и QR появятся автоматически.'));progress.append(spinner,text);card.append(progress);}
-  if (profiles.some(p=>p.needs_attention)) card.append(node('p','form-error','Не удалось применить изменения. Администратору нужно проверить сервер.'));
-  if (current) {card.append(node('p', 'small muted', `${current.server_name} · версия ${current.revision}`));const service=state.services.find(s=>s.id===current.server_id);if(service){card.append(locationLabel(service),node('p','small muted',serviceStatus(service)));}if(current.state==='ready')card.append(node('p',current.server_id!==state.vpn.server_id?'form-error':'small muted',current.server_id!==state.vpn.server_id?'Доступен новый основной сервер — перевыпустите профиль':'Профиль для текущего сервера'));}
-  if (profiles.some(p => p.state === 'revoking')) card.append(node('p','form-error','Отзыв старых ключей ещё не подтверждён сервером.'));
+  if (current?.needs_attention) card.append(node('p','form-error','Не удалось применить изменения. Администратору нужно проверить сервер.'));
+  if (current) {card.append(node('p', 'small muted', `${current.server_name} · версия ${current.revision}`));const service=state.services.find(s=>s.id===current.server_id);if(service){card.append(locationLabel(service),node('p','small muted',serviceStatus(service)));}if(current.state==='ready')card.append(node('p','small muted',current.server_id!==state.vpn.server_id?'Доступен новый основной сервер — перевыпустите профиль':'Профиль для текущего сервера'));}
+  const revoking=profiles.filter(p=>p.state==='revoking');
+  if(revoking.length){const details=node('details','profile-cleanup');details.dataset.deviceId=device.id;details.open=expandedCleanup.has(device.id);details.append(node('summary','','Старые ключи: ожидается подтверждение отзыва'),node('p','small muted',`Серверы: ${[...new Set(revoking.map(p=>p.server_name))].join(', ')}. Пока сервер не подтвердит удаление, старые ключи считаются неотозванными.`));if(current?.state==='ready')details.append(node('p','small muted','Новый профиль готов: его можно скачать и импортировать, не дожидаясь отзыва старого.'));card.append(details);}
   const controls = node('div','card-actions');
   if (current?.state === 'ready') {
    const download=node('a','button secondary','Скачать .conf'); download.href=`/api/profiles/${current.id}/download`; controls.append(download);
@@ -86,9 +88,13 @@ async function loadServers() {
   const hostKey=node('details');hostKey.append(node('summary','','Отпечаток SSH-хоста'),node('code','',server.host_key_fingerprint));card.append(hostKey);
   if(server.endpoint) card.append(node('p','small muted',`${server.endpoint}:${server.vpn_port}/udp · AmneziaWG 3.1`));
   const job=state.jobs.find(j=>j.server_id===server.id);
+  const cleanupPending=server.migration_cleanup&&job?.kind==='sync'&&['SSH connection failed','SSH operation timed out or cancelled'].includes(server.vpn_error);
   const busy=state.jobs.some(j=>j.server_id===server.id&&['queued','running'].includes(j.status));
-  if(job) {const labels={queued:'В очереди',running:'Выполняется',succeeded:'Выполнено',failed:'Ошибка'};card.append(node('p','small muted',`${labels[job.status]} · попытка ${job.attempts}`));}
-  if(server.vpn_error)card.append(node('p','form-error',server.vpn_error));
+  if(job) {const labels={queued:'В очереди',running:'Выполняется',succeeded:'Выполнено',failed:cleanupPending?'Отзыв на старом сервере отложен':'Ошибка'};card.append(node('p','small muted',`${labels[job.status]} · попытка ${job.attempts}`));}
+  if(server.vpn_error){
+   if(cleanupPending){const details=node('details','profile-cleanup');details.append(node('summary','','Старый сервер: отзыв ключей пока не подтверждён'),node('p','small muted','Это не препятствует выпуску профилей на новом основном сервере. Старые ключи пока считаются неотозванными.'),node('p','small muted',server.vpn_error));card.append(details);}
+   else card.append(node('p','form-error',server.vpn_error));
+  }
   const controls=node('div','card-actions');
   const check=node('button','button secondary','Проверить SSH');check.disabled=busy;check.addEventListener('click',()=>serverAction(server.id,'check'));controls.append(check);
   const deploy=node('button','button secondary',server.vpn_state==='ready'?'Повторить применение':'Развернуть');deploy.disabled=busy;deploy.addEventListener('click',()=>{

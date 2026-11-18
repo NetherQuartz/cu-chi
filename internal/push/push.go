@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 )
 
 var ErrInvalid = errors.New("invalid push subscription")
@@ -82,8 +83,36 @@ func Client() *http.Client {
 		},
 	}}
 }
-func Payload(id, kind, severity string) []byte {
+
+type Context struct{ ActorNames, ServerName string }
+
+// Context is supplied only for administrator operations by the delivery query.
+// Bound labels and flatten controls; never attach credentials or diagnostics.
+func pushLabel(value string, limit int) string {
+	value = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return ' '
+		}
+		return r
+	}, value)
+	runes := []rune(strings.Join(strings.Fields(value), " "))
+	if len(runes) > limit {
+		return string(runes[:limit]) + "…"
+	}
+	return string(runes)
+}
+func Payload(id, kind, severity string, details ...Context) []byte {
 	body := map[string]string{"outage": "Обнаружена проблема с VPN. Подробности в личном кабинете.", "management": "Не удаётся проверить сервер. Откройте панель администратора.", "recovery": "Проверка VPN снова проходит успешно.", "reminder": "Доступен новый основной сервер. Перевыпустите и импортируйте профили устройств.", "test": "Уведомления Củ Chi подключены.", "job_failed": "Изменение VPN не удалось применить. Откройте панель администратора."}[kind]
+	if len(details) > 0 && (kind == "job_failed" || kind == "management") {
+		if server := pushLabel(details[0].ServerName, 60); server != "" {
+			body = "Сервер: " + server + ". " + body
+		}
+		if kind == "job_failed" {
+			if actor := pushLabel(details[0].ActorNames, 100); actor != "" {
+				body = "Запросили: " + actor + ". " + body
+			}
+		}
+	}
 	title := "Củ Chi"
 	if severity == "critical" {
 		title += " · Критично"
@@ -91,7 +120,7 @@ func Payload(id, kind, severity string) []byte {
 	b, _ := json.Marshal(map[string]string{"id": id, "title": title, "body": body, "severity": severity})
 	return b
 }
-func Send(ctx context.Context, client *http.Client, s webpush.Subscription, private, public, origin, id, kind, severity string, ttl int) (int, error) {
+func Send(ctx context.Context, client *http.Client, s webpush.Subscription, private, public, origin, id, kind, severity string, ttl int, details ...Context) (int, error) {
 	if err := Validate(s); err != nil {
 		return 0, err
 	}
@@ -99,7 +128,7 @@ func Send(ctx context.Context, client *http.Client, s webpush.Subscription, priv
 	if severity == "critical" {
 		urgency = webpush.UrgencyHigh
 	}
-	resp, err := webpush.SendNotificationWithContext(ctx, Payload(id, kind, severity), &s, &webpush.Options{HTTPClient: client, Subscriber: origin, VAPIDPrivateKey: private, VAPIDPublicKey: public, TTL: ttl, Urgency: urgency, Topic: strings.ReplaceAll(id, "-", "")})
+	resp, err := webpush.SendNotificationWithContext(ctx, Payload(id, kind, severity, details...), &s, &webpush.Options{HTTPClient: client, Subscriber: origin, VAPIDPrivateKey: private, VAPIDPublicKey: public, TTL: ttl, Urgency: urgency, Topic: strings.ReplaceAll(id, "-", "")})
 	if err != nil {
 		return 0, errors.New("push transport failed")
 	}

@@ -69,3 +69,18 @@ func TestEncryptedUrgentDelivery(t *testing.T) {
 		t.Fatal(code, err)
 	}
 }
+
+func TestOperationPayloadContext(t *testing.T) {
+	details := Context{ActorNames: "alice\nbob", ServerName: "Replacement"}
+	p := string(Payload("id", "job_failed", "warning", details))
+	if !strings.Contains(p, "alice bob") || !strings.Contains(p, "Replacement") {
+		t.Fatal("missing operation context", p)
+	}
+	p = string(Payload("id", "reminder", "warning", details))
+	if strings.Contains(p, "alice") || strings.Contains(p, "Replacement") {
+		t.Fatal("operation context exposed in ordinary notice", p)
+	}
+	if len([]rune(pushLabel(strings.Repeat("я", 500), 100))) != 101 {
+		t.Fatal("label limit")
+	}
+}
