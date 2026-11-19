@@ -15,12 +15,16 @@ function renderXrayServer(card,server) {
   box.append(node('p',n.error?'form-error':'small muted',n.error?`Не удалось применить: ${n.error}. Повтор через 3 минуты.`:pending?'Ожидается применение…':`Готов · TCP/443 · SNI ${n.sni} · прямой выход`));
   box.append(node('p','small muted',n.published?'Включён в подписки устройств':'Скрыт из подписок устройств'));
  }
- const deploy=xrayButton(n?'Повторить применение Xray':'Развернуть Xray',async()=>{
-  if(!confirm(`Развернуть Xray на «${server.name}»? Нужен свободный TCP-порт 443. Панель подберёт домен REALITY и проверит соединение.`)) return;
-  await api(`/api/admin/servers/${server.id}/xray`,{method:'POST'});await loadServers();
- });
+ const apply=async(published)=>{
+  const notice=n?'':published?' После успешной проверки пользователи получат уведомление.':' Сервер будет скрыт до публикации.';
+  if(!confirm(`Развернуть Xray на «${server.name}»? Нужен свободный TCP-порт 443.${notice}`))return;
+  await api(`/api/admin/servers/${server.id}/xray`,{method:'POST',body:JSON.stringify({published})});
+  await loadServers();
+ };
+ const deploy=xrayButton(n?'Повторить применение Xray':'Развернуть Xray',()=>apply(true));
  deploy.disabled=!!n&&n.applied<n.revision&&!n.error;
  box.append(deploy);
+ if(!n)box.append(xrayButton('Развернуть без публикации',()=>apply(false)));
  if(n)box.append(xrayButton(n.published?'Скрыть из подписок':'Добавить в подписки',async()=>{
   await api(`/api/admin/servers/${server.id}/xray-publication`,{method:'POST',body:JSON.stringify({published:!n.published})});await loadServers();
  }));

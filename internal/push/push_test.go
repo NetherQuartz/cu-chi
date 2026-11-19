@@ -84,3 +84,15 @@ func TestOperationPayloadContext(t *testing.T) {
 		t.Fatal("label limit")
 	}
 }
+
+func TestXrayAvailabilityPayload(t *testing.T) {
+	p := string(Payload("id", "xray_available", "info", Context{ServerName: "Test VPS", ActorNames: "private actor"}))
+	for _, want := range []string{"Доступен новый Xray-сервер", "Test VPS", "Обновите подписку", "xray_available"} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("missing %q in payload", want)
+		}
+	}
+	if strings.Contains(p, "private actor") {
+		t.Fatal("unexpected actor in family announcement")
+	}
+}

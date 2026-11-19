@@ -73,3 +73,84 @@ func TestXraySubscriptionLifecycle(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestXrayAvailabilityAnnouncement(t *testing.T) {
+	for _, hidden := range []bool{false, true} {
+		t.Run(map[bool]string{false: "public deployment", true: "publish after testing"}[hidden], func(t *testing.T) {
+			a, admin, server, _, _ := vpnSetup(t)
+			ctx := context.Background()
+			user, muted, denied := account(t, a, "user"), account(t, a, "user"), account(t, a, "denied")
+			for _, who := range []identity{user, muted} {
+				requireStatus(t, request(a, "POST", "/api/push/subscription", who, pushBody("https://fcm.googleapis.com/fcm/send/"+who.user.ID)), 204)
+			}
+			requireStatus(t, request(a, "PUT", "/api/push/preferences", muted, `{"reminders":false}`), 204)
+			inbox := func(who identity, want int) {
+				t.Helper()
+				notices, err := a.db.Inbox(ctx, who.user)
+				if err != nil || len(notices) != want {
+					t.Fatalf("inbox: got %d, want %d: %v", len(notices), want, err)
+				}
+				if want > 0 && (notices[0].Kind != "xray_available" || notices[0].ServerName != "Test VPS" || notices[0].Severity != "info") {
+					t.Fatalf("unexpected notice %#v", notices[0])
+				}
+			}
+			deploy := "/api/admin/servers/" + server + "/xray"
+			body := ""
+			if hidden {
+				body = `{"published":false}`
+			}
+			requireStatus(t, request(a, "POST", deploy, admin, body), 204)
+			job, err := a.db.XNext(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			finish := func(failure string) {
+				t.Helper()
+				if err := a.db.XFinish(ctx, job, "www.example.com", failure); err != nil {
+					t.Fatal(err)
+				}
+			}
+			publish := func(body string) {
+				t.Helper()
+				requireStatus(t, request(a, "POST", deploy+"-publication", admin, body), 204)
+			}
+			finish("probe failed")
+			inbox(user, 0)
+			finish("")
+			if hidden {
+				inbox(user, 0)
+				publish(`{"published":true}`)
+			}
+			inbox(user, 1)
+			inbox(admin, 1)
+			inbox(muted, 1)
+			inbox(denied, 0)
+			if err = a.db.QueuePush(ctx); err != nil {
+				t.Fatal(err)
+			}
+			var count int
+			if err = a.db.Pool.QueryRow(ctx, "SELECT count(*) FROM push_outbox").Scan(&count); err != nil || count != 1 {
+				t.Fatal("wrong push audience", count, err)
+			}
+			publish(`{"published":false}`)
+			pushJob, err := a.db.ClaimPush(ctx)
+			if err != nil || pushJob.Eligible || pushJob.Kind != "xray_available" || pushJob.ServerName != "Test VPS" {
+				t.Fatal("hidden server eligible or missing push context", err)
+			}
+			if err = a.db.FinishPush(ctx, pushJob, 0, true); err != nil {
+				t.Fatal(err)
+			}
+			later := account(t, a, "user")
+			publish(`{"published":true}`)
+			finish("")
+			requireStatus(t, request(a, "POST", deploy, admin, ""), 204)
+			job, err = a.db.XNext(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			finish("")
+			inbox(user, 1)
+			inbox(later, 0)
+		})
+	}
+}

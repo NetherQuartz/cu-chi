@@ -46,9 +46,15 @@ func (a *App) xrayRoutes(m *http.ServeMux) {
 			apiError(w, 404, "Сервер не найден")
 			return
 		}
+		options := struct {
+			Published bool `json:"published"`
+		}{Published: true}
+		if r.ContentLength != 0 && !decode(w, r, &options) {
+			return
+		}
 		k := xray.Generate()
 		raw, _ := json.Marshal(k)
-		e := a.db.XDeploy(r.Context(), s.User, id, a.box.Seal(raw, "xray-server:"+id), k.Public, k.Short)
+		e := a.db.XDeploy(r.Context(), s.User, id, a.box.Seal(raw, "xray-server:"+id), k.Public, k.Short, options.Published)
 		if !a.vpnError(w, e) {
 			w.WriteHeader(204)
 		}
@@ -69,12 +75,7 @@ func (a *App) xrayRoutes(m *http.ServeMux) {
 			apiError(w, 400, "Укажите режим публикации")
 			return
 		}
-		tag, e := a.db.Pool.Exec(r.Context(), "UPDATE xray_nodes SET published=$2 WHERE server_id=$1", id, *v.Published)
-		if a.vpnError(w, e) {
-			return
-		}
-		if tag.RowsAffected() == 0 {
-			apiError(w, 404, "Xray не настроен")
+		if a.vpnError(w, a.db.XPublish(r.Context(), id, *v.Published)) {
 			return
 		}
 		w.WriteHeader(204)

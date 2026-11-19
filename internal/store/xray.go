@@ -40,13 +40,13 @@ func (s *Store) XNodes(ctx context.Context) ([]XNode, error) {
 	}
 	return out, rows.Err()
 }
-func (s *Store) XDeploy(ctx context.Context, u User, id string, key []byte, pub, short string) error {
+func (s *Store) XDeploy(ctx context.Context, u User, id string, key []byte, pub, short string, published bool) error {
 	tx, e := vpnTx(ctx, s)
 	if e != nil {
 		return e
 	}
 	defer tx.Rollback(ctx)
-	tag, e := tx.Exec(ctx, `INSERT INTO xray_nodes(server_id,identity,public_key,short_id) SELECT id,$2,$3,$4 FROM servers WHERE id=$1 ON CONFLICT(server_id) DO UPDATE SET revision=nextval('xray_revision'),retry_at=now(),error=''`, id, key, pub, short)
+	tag, e := tx.Exec(ctx, `INSERT INTO xray_nodes(server_id,identity,public_key,short_id,published) SELECT id,$2,$3,$4,$5 FROM servers WHERE id=$1 ON CONFLICT(server_id) DO UPDATE SET revision=nextval('xray_revision'),retry_at=now(),error=''`, id, key, pub, short, published)
 	if e != nil {
 		return e
 	}
@@ -58,6 +58,40 @@ func (s *Store) XDeploy(ctx context.Context, u User, id string, key []byte, pub,
 	}
 	return tx.Commit(ctx)
 }
+
+// Announce once per server, in the same transaction that makes it available.
+// The marker survives inbox retention, later reconciles, and visibility changes.
+func announceXrayAvailability(ctx context.Context, tx pgx.Tx, id string) error {
+	_, err := tx.Exec(ctx, `WITH first_publication AS (
+   UPDATE xray_nodes SET availability_announced=true
+   WHERE server_id=$1 AND published AND applied=revision AND applied>0 AND error='' AND NOT availability_announced
+   RETURNING server_id
+ )
+ INSERT INTO notifications(user_id,event_key,kind,severity,server_id)
+ SELECT u.id,'xray:available:'||n.server_id::text,'xray_available','info',n.server_id
+ FROM first_publication n CROSS JOIN users u WHERE u.role IN ('admin','user')`, id)
+	return err
+}
+
+func (s *Store) XPublish(ctx context.Context, id string, published bool) error {
+	tx, err := vpnTx(ctx, s)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, "UPDATE xray_nodes SET published=$2 WHERE server_id=$1", id, published)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if err = announceXrayAvailability(ctx, tx, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) XDevices(ctx context.Context, u User) ([]XDevice, error) {
 	rows, e := s.Pool.Query(ctx, `SELECT x.device_id,x.desired,x.revision FROM xray_devices x JOIN devices d ON d.id=x.device_id WHERE d.user_id=$1 OR $2`, u.ID, u.Role == "admin")
 	if e != nil {
@@ -171,6 +205,9 @@ func (s *Store) XFinish(ctx context.Context, w XWork, sni, failure string) error
 		_, e = tx.Exec(ctx, "UPDATE xray_nodes SET error=$3,retry_at=now()+interval '3 minutes' WHERE server_id=$1 AND revision=$2", w.ID, w.Revision, failure)
 	} else {
 		_, e = tx.Exec(ctx, "UPDATE xray_nodes SET applied=GREATEST(applied,$2),sni=$3,error='' WHERE server_id=$1", w.ID, w.Revision, sni)
+		if e == nil {
+			e = announceXrayAvailability(ctx, tx, w.ID)
+		}
 		if e == nil {
 			_, e = tx.Exec(ctx, "DELETE FROM xray_devices d WHERE NOT desired AND NOT EXISTS(SELECT 1 FROM xray_nodes n WHERE n.applied<d.revision)")
 		}

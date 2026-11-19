@@ -86,7 +86,7 @@ func Client() *http.Client {
 
 type Context struct{ ActorNames, ServerName string }
 
-// Context is supplied only for administrator operations by the delivery query.
+// The delivery query supplies only labels visible to the recipient.
 // Bound labels and flatten controls; never attach credentials or diagnostics.
 func pushLabel(value string, limit int) string {
 	value = strings.Map(func(r rune) rune {
@@ -114,10 +114,19 @@ func Payload(id, kind, severity string, details ...Context) []byte {
 		}
 	}
 	title := "Củ Chi"
+	if kind == "xray_available" {
+		title = "Доступен новый Xray-сервер"
+		if len(details) > 0 {
+			if name := pushLabel(details[0].ServerName, 60); name != "" {
+				title += " · " + name
+			}
+		}
+		body = "Обновите подписку Xray в приложении или выпустите её в разделе «Устройства»."
+	}
 	if severity == "critical" {
 		title += " · Критично"
 	}
-	b, _ := json.Marshal(map[string]string{"id": id, "title": title, "body": body, "severity": severity})
+	b, _ := json.Marshal(map[string]string{"id": id, "title": title, "body": body, "kind": kind, "severity": severity})
 	return b
 }
 func Send(ctx context.Context, client *http.Client, s webpush.Subscription, private, public, origin, id, kind, severity string, ttl int, details ...Context) (int, error) {
