@@ -221,7 +221,7 @@ func (s *Store) DeleteDevice(ctx context.Context, u User, id string) error {
 		return err
 	}
 	var active bool
-	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM profiles WHERE device_id=$1 AND state<>'revoked') OR EXISTS(SELECT 1 FROM gateways WHERE device_id=$1)", id).Scan(&active); err != nil {
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM profiles WHERE device_id=$1 AND state<>'revoked') OR EXISTS(SELECT 1 FROM gateways WHERE device_id=$1) OR EXISTS(SELECT 1 FROM xray_devices WHERE device_id=$1)", id).Scan(&active); err != nil {
 		return err
 	}
 	if active {

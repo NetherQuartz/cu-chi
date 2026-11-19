@@ -76,3 +76,6 @@ The owner confirmed VMM support and chose fail-closed. Implementing an administr
 WARP implementation verification completed in CI 44290879338 (`6eac641`): isolated kernel-WG routing/failure/recovery tests and ordinary AWG/gateway regression suites passed; images published. Real Cloudflare registration, native-client WARP egress/QUIC and actual-VPS rollout remain pending a spare server. NAS has not yet been updated to this release.
 
 Real WARP acceptance completed on an owner-supplied dedicated VPS (2026-11-18): published `6eac641` runtime registered with Cloudflare; external AWG traffic reported warp=on with a changed public IP and unchanged client profile. UDP DNS, HTTPS/128 KiB transfer, restart, interface-loss fail-closed/recovery and deliberate failed-enable rollback passed. No code fix or new runtime release was needed. Owner confirms NAS is not yet updated. Test deployment was removed so the VPS can be registered normally in the portal; original credentials are preserved. See warp-egress.md for exact coverage and remaining QUIC/native-client UI/real NAS-toggle limits.
+
+
+Xray VLESS/Vision + REALITY with automatic target selection, per-device subscriptions and independent VPS deployment is implemented. The owner confirmed the earlier WARP rollout through the NAS portal.

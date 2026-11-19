@@ -42,7 +42,7 @@ async function start() {
  finally { $('#loading').hidden = true; }
 }
 async function loadDevices() {
- [state.devices,state.profiles,state.vpn,state.services,state.health] = await Promise.all([api('/api/devices'),api('/api/profiles'),api('/api/vpn'),api('/api/services'),api('/api/health')]);
+ [state.devices,state.profiles,state.vpn,state.services,state.health,state.xray] = await Promise.all([api('/api/devices'),api('/api/profiles'),api('/api/vpn'),api('/api/services'),api('/api/health'),api('/api/xray')]);
  const expandedCleanup=new Set($$('#devices .profile-cleanup[open]').map(el=>el.dataset.deviceId));
  const container = $('#devices'); container.replaceChildren();
  $('#device-empty').hidden = state.devices.length > 0;
@@ -69,15 +69,15 @@ async function loadDevices() {
    const download=node('a','button secondary','Скачать .conf'); download.href=`/api/profiles/${current.id}/download`; controls.append(download);
    const qr=node('button','button secondary','QR'); qr.addEventListener('click',()=>{ $('#profile-qr').src=`/api/profiles/${current.id}/qr`; $('#qr-dialog').showModal(); }); controls.append(qr);
   }
-  const issue=node('button','button secondary',applying?'Подготовка профиля…':current?'Перевыпустить':'Выпустить профиль'); issue.disabled=!state.vpn.available || current?.state==='pending';
+  const issue=node('button','button secondary',applying?'Подготовка профиля…':current?'Перевыпустить AWG':'Выпустить AWG'); issue.disabled=!state.vpn.available || current?.state==='pending';
   issue.addEventListener('click',()=>confirmProfile(device,'issue')); controls.append(issue);
   if (profiles.length) { const revoke=node('button','button secondary','Отозвать'); revoke.addEventListener('click',()=>confirmProfile(device,'revoke')); controls.append(revoke); }
   if (!state.vpn.available) card.append(node('p','small muted','Администратор должен выбрать готовый основной сервер.'));
-  const stats=node('button','button secondary','Статистика');stats.addEventListener('click',()=>openDeviceTraffic(device.id));controls.append(stats);card.append(controls); container.append(card);
+  const stats=node('button','button secondary','Статистика');stats.addEventListener('click',()=>openDeviceTraffic(device.id));controls.append(stats);card.append(controls);if(device.platform!=='gateway')renderXrayDevice(card,device); container.append(card);
  }
 }
 async function loadServers() {
- [state.servers,state.jobs,state.sshKeys,state.monitors,state.health] = await Promise.all([api('/api/admin/servers'),api('/api/admin/jobs'),api('/api/admin/ssh-keys'),api('/api/admin/monitoring'),api('/api/health')]); renderSSHKeys(); const container = $('#servers'); container.replaceChildren(); $('#server-empty').hidden = state.servers.length > 0;
+ [state.servers,state.jobs,state.sshKeys,state.monitors,state.health,state.xrayNodes] = await Promise.all([api('/api/admin/servers'),api('/api/admin/jobs'),api('/api/admin/ssh-keys'),api('/api/admin/monitoring'),api('/api/health'),api('/api/admin/xray')]); renderSSHKeys(); const container = $('#servers'); container.replaceChildren(); $('#server-empty').hidden = state.servers.length > 0;
  for (const server of state.servers) {
   const card=node('article','server-card'); const top=node('div','card-top');
   const names={new:'Не развёрнут',checked:'SSH проверен',deploying:'Разворачивается',ready:'Развёрнут'};
@@ -95,6 +95,7 @@ async function loadServers() {
    if(cleanupPending){const details=node('details','profile-cleanup');details.append(node('summary','','Старый сервер: отзыв ключей пока не подтверждён'),node('p','small muted','Это не препятствует выпуску профилей на новом основном сервере. Старые ключи пока считаются неотозванными.'),node('p','small muted',server.vpn_error));card.append(details);}
    else card.append(node('p','form-error',egressError(server.vpn_error)));
   }
+  renderXrayServer(card,server);
   card.append(egressControl(server,busy));
   const controls=node('div','card-actions');
   const check=node('button','button secondary','Проверить SSH');check.disabled=busy;check.addEventListener('click',()=>serverAction(server.id,'check'));controls.append(check);

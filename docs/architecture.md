@@ -91,3 +91,6 @@ Migration 014 adds desired/applied egress modes (both default direct) and an enc
 Inside the VPS container only, `iif awg0` routes through kernel WG `warp0` when enabled. An unreachable table default plus a dedicated forwarding chain block direct fallback, including interface loss. Locally originated management/AWG/WARP outer packets use main routing. Switching clears only AWG-source conntrack flows. Startup forwarding is blocked until the complete egress policy exists. IPv6 remains disabled. A failed application restores the prior mode best-effort; rollback failure is distinct and visible. Successful production apply/probe requires DNS, HTTPS and Cloudflare `warp=on|plus`, not just a handshake. See [operations/limitations](warp-egress.md).
 
 Real WARP acceptance on a dedicated Ubuntu 26.04 VPS is recorded in [warp-egress.md](warp-egress.md): registration, unchanged external AWG profile, Cloudflare exit, UDP DNS/TLS, restart, fail-closed failure/recovery and failed-enable rollback passed. This did not change the family server or the NAS; real portal toggle and QUIC/native-client UI acceptance remain distinct.
+
+
+Xray uses an independent revision queue, REALITY identity per VPS, and server-specific VLESS credentials per enrolled device. See [Xray](xray.md).

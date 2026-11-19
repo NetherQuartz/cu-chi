@@ -72,7 +72,7 @@ func (w *Worker) lead(ctx context.Context) {
 		}
 		j, err := w.DB.Claim(ctx)
 		if errors.Is(err, pgx.ErrNoRows) {
-			if w.gatewayNext(ctx) {
+			if w.xrayNext(ctx) || w.gatewayNext(ctx) {
 				continue
 			}
 			w.observeNext(ctx)
@@ -112,19 +112,9 @@ func (w *Worker) lead(ctx context.Context) {
 	}
 }
 func (w *Worker) Execute(ctx context.Context, j store.Job, t store.Target) error {
-	namespace := "server:" + t.ID
-	if t.AuthMethod == "saved_key" {
-		namespace = "ssh-key:" + t.SSHKeyID
-	}
-	key, err := w.Box.Open(t.EncryptedKey, namespace)
+	c, key, err := w.credentials(t)
 	if err != nil {
-		return errors.New("cannot decrypt SSH credentials")
-	}
-	c := deployer.Credentials{Host: t.Hostname, Port: t.SSHPort, User: t.SSHUser, Fingerprint: t.Fingerprint, Key: key}
-	if t.AuthMethod == "password" {
-		c.AuthMethod = "password"
-		c.Password = key
-		c.Key = nil
+		return err
 	}
 	defer clear(key)
 	if j.Kind == "check" {
@@ -257,4 +247,22 @@ func (w *Worker) observe(ctx context.Context, t store.Target) {
 	if w.DB.SaveObservation(save, t.ID, sample, failure) != nil {
 		slog.Warn("monitoring result could not be saved")
 	}
+}
+
+func (w *Worker) credentials(t store.Target) (deployer.Credentials, []byte, error) {
+	namespace := "server:" + t.ID
+	if t.AuthMethod == "saved_key" {
+		namespace = "ssh-key:" + t.SSHKeyID
+	}
+	key, err := w.Box.Open(t.EncryptedKey, namespace)
+	if err != nil {
+		return deployer.Credentials{}, nil, errors.New("cannot decrypt SSH credentials")
+	}
+	c := deployer.Credentials{Host: t.Hostname, Port: t.SSHPort, User: t.SSHUser, Fingerprint: t.Fingerprint, Key: key}
+	if t.AuthMethod == "password" {
+		c.AuthMethod = "password"
+		c.Password = key
+		c.Key = nil
+	}
+	return c, key, nil
 }
