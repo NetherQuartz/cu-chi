@@ -1,6 +1,6 @@
 # Session handoff
 
-Last updated: 2026-11-18. This file intentionally contains no private infrastructure details or credentials.
+Last updated: 2026-11-20. This file intentionally contains no private infrastructure details or credentials.
 
 ## Owner decisions
 
@@ -298,3 +298,11 @@ Next: owner can update NAS app.image and backup CUCHI_IMAGE_TAG to the already p
 
 
 New Xray adapter uses migration 015, automatic TLS target selection and an authenticated HTTPS deployment probe. Existing AWG and WARP control paths are independent. The owner confirmed working WARP on the NAS. See [operations](xray.md) for rollout, scope and subscription handling.
+
+## Xray pilot acceptance (2026-11-20)
+
+Tested release `082cebf733a744dd5043620f2f3c754186ee7cf2` against an owner-provided dedicated VPS using an isolated Củ Chi database and the normal registration, deployment and device APIs. The SSH password login used a pinned host key after initial registration. Automatic REALITY target selection and the remote HTTPS probe passed. An external Xray client used the device's actual subscription and carried HTTPS traffic with the VPS as its observed exit IP. Revocation immediately returned HTTP 404 for that subscription; after the VPS confirmed the new configuration, the previously working external client could no longer carry HTTPS traffic. Headless Chrome on desktop and phone viewport widths showed the server status and a working subscription/QR dialog.
+
+Removed the deployment after verifying its ownership label, checked that TCP/443 was free, and deleted the disposable local database, client and keys. Docker remains available on the test VPS. The original credential file remains with the owner. No change was made to the NAS or family server inventory during this pilot. Next step is to update the NAS image, register the test VPS there, and try a native VLESS client from the affected network. Long-term reachability from that network is unverified.
+
+GitHub Actions run 44618361014 passed the test, runtime and publish jobs. Anonymous GHCR manifest inspection confirmed Linux amd64 and arm64 for `ghcr.io/netherquartz/cu-chi:sha-082cebf733a744dd5043620f2f3c754186ee7cf2`. Use this release tag for the NAS application and backup metadata.
