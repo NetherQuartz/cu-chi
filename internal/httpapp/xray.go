@@ -32,7 +32,11 @@ func (a *App) xrayRoutes(m *http.ServeMux) {
 		if a.vpnError(w, e) {
 			return
 		}
-		jsonResponse(w, 200, map[string]any{"servers": ready, "devices": devices})
+		history, e := a.db.ArchivedXServers(r.Context(), s.User)
+		if a.vpnError(w, e) {
+			return
+		}
+		jsonResponse(w, 200, map[string]any{"servers": ready, "devices": devices, "archived_servers": history})
 	}))
 	m.HandleFunc("GET /api/admin/xray", a.auth(true, func(w http.ResponseWriter, r *http.Request, s store.Session) {
 		n, e := a.db.XNodes(r.Context())

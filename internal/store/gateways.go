@@ -11,6 +11,7 @@ import (
 )
 
 type Gateway struct {
+	AppliedServerName string `json:"applied_server_name,omitempty"`
 	Server
 	DeviceID            string     `json:"device_id"`
 	RouterIP            string     `json:"router_ip"`
@@ -29,10 +30,10 @@ type Gateway struct {
 	EncryptedLAN        []byte     `json:"-"`
 }
 
-const gatewaySelect = `SELECT g.id::text,g.device_id::text,g.name,g.hostname,g.router_ip,g.client_cidrs,g.ssh_port,g.ssh_user,g.host_key_fingerprint,g.host_key_policy,g.ssh_auth_method,COALESCE(g.ssh_key_id::text,''),g.created_at,g.state,g.error,g.kind,g.attempts,COALESCE(g.desired_profile_id::text,''),COALESCE(g.applied_profile_id::text,''),g.applied_at,COALESCE((SELECT p.id::text FROM profiles p WHERE p.device_id=g.device_id AND p.desired AND p.state='ready'),''),g.generation,COALESCE(g.run_token::text,''),CASE WHEN g.ssh_auth_method='saved_key' THEN k.encrypted_private_key ELSE g.encrypted_credential END,g.encrypted_lan FROM gateways g LEFT JOIN ssh_keys k ON k.id=g.ssh_key_id `
+const gatewaySelect = `SELECT g.id::text,g.device_id::text,g.name,g.hostname,g.router_ip,g.client_cidrs,g.ssh_port,g.ssh_user,g.host_key_fingerprint,g.host_key_policy,g.ssh_auth_method,COALESCE(g.ssh_key_id::text,''),g.created_at,g.state,g.error,g.kind,g.attempts,COALESCE(g.desired_profile_id::text,''),COALESCE(g.applied_profile_id::text,''),g.applied_at,COALESCE((SELECT p.id::text FROM profiles p WHERE p.device_id=g.device_id AND p.desired AND p.state='ready'),''),g.generation,COALESCE(g.run_token::text,''),CASE WHEN g.ssh_auth_method='saved_key' THEN k.encrypted_private_key ELSE g.encrypted_credential END,g.encrypted_lan,COALESCE((SELECT s.display_name FROM profiles p JOIN servers s ON s.id=p.server_id WHERE p.id=g.applied_profile_id),'') FROM gateways g LEFT JOIN ssh_keys k ON k.id=g.ssh_key_id `
 
 func scanGateway(row pgx.Row) (g Gateway, err error) {
-	err = row.Scan(&g.ID, &g.DeviceID, &g.Name, &g.Hostname, &g.RouterIP, &g.ClientCIDRs, &g.SSHPort, &g.SSHUser, &g.Fingerprint, &g.HostKeyPolicy, &g.AuthMethod, &g.SSHKeyID, &g.CreatedAt, &g.State, &g.Error, &g.Kind, &g.Attempts, &g.DesiredProfileID, &g.AppliedProfileID, &g.AppliedAt, &g.CurrentProfileID, &g.Generation, &g.RunToken, &g.EncryptedCredential, &g.EncryptedLAN)
+	err = row.Scan(&g.ID, &g.DeviceID, &g.Name, &g.Hostname, &g.RouterIP, &g.ClientCIDRs, &g.SSHPort, &g.SSHUser, &g.Fingerprint, &g.HostKeyPolicy, &g.AuthMethod, &g.SSHKeyID, &g.CreatedAt, &g.State, &g.Error, &g.Kind, &g.Attempts, &g.DesiredProfileID, &g.AppliedProfileID, &g.AppliedAt, &g.CurrentProfileID, &g.Generation, &g.RunToken, &g.EncryptedCredential, &g.EncryptedLAN, &g.AppliedServerName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotFound
 	}

@@ -94,3 +94,9 @@ Real WARP acceptance on a dedicated Ubuntu 26.04 VPS is recorded in [warp-egress
 
 
 Xray uses an independent revision queue, REALITY identity per VPS, and server-specific VLESS credentials per enrolled device. See [Xray](xray.md).
+
+## Server editing and deletion
+
+Migration 017 gives each VPS an edit revision and an optional deletion timestamp. The SSH address also supplies the Xray subscription host. The AWG public endpoint can be edited independently. A saved edit preserves the SSH host fingerprint and the VPN identity. Concurrent edits use the management revision. An empty credential field retains an existing secret only for the same login method. Per-server advisory locks serialize edits and deletion against remote work. Gateway deployments consuming that server's profile are also checked.
+
+Deletion is a portal operation and works for offline hosts. One transaction removes saved access and Xray runtime configuration, releases the SSH address and optional default, cancels pending work, and archives outstanding AWG profiles. Archived profiles may still be desired so migration reminders include their owners until reissue or explicit withdrawal. History retains the server ID, including its traffic and inbox links, previously applied Xray device associations and gateway uplink. Read models share a generated display name with the deletion marker. Remote processes and previously installed keys can remain on the VPS.

@@ -4,7 +4,8 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = { me: null, view: 'devices', devices: [], servers: [], deleting: null, profiles: [], vpn: {}, jobs: [], sshKeys: [], deploying: null, profileAction: null, loading: false };
 const platforms = { ios: 'iOS / iPadOS', android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux', gateway: 'Домашний шлюз' };
 const actions = { 'server.egress_warp_queued':'Запрошен выход через WARP', 'server.egress_direct_queued':'Запрошен прямой выход', 'notifications.reminded':'Отправлены напоминания', 'server.maintenance_changed':'Режим обслуживания изменён', 'server.location_changed':'Местоположение изменено', 'ssh_key.created':'SSH-ключ сохранён', 'ssh_key.deleted':'SSH-ключ удалён', 'profile.issued':'Профиль запрошен', 'profile.revocation_requested':'Запрошен отзыв профилей', 'server.check_queued':'Запрошена проверка SSH', 'server.deploy_queued':'Запрошен деплой', 'server.default_changed':'Основной сервер изменён', 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
-let toastTimer, renderedSSHKeys;
+let toastTimer, renderedSSHKeys, editingServer;
+Object.assign(actions, {'server.updated':'Сервер изменён','server.deleted':'Сервер удалён'});
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 function notify(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4000); }
 async function api(path, options = {}) {
@@ -58,10 +59,19 @@ async function loadDevices() {
   const profiles = state.profiles.filter(p => p.device_id === device.id);
   const current = profiles.find(p => p.desired);
   const applying=current?.state==='pending'&&!current.needs_attention;
-  const meta = node('div', 'device-meta'); meta.append(node('span', '', device.owner), node('span', 'badge', current ? (current.needs_attention?'Требуется внимание':current.state === 'ready' ? 'Профиль готов' : 'Применяется на сервере') : 'Профиль не выпущен')); card.append(meta);
+  const meta = node('div', 'device-meta'); meta.append(node('span', '', device.owner), node('span', 'badge', current ? (current.state==='archived'?'Нужен новый профиль':current.needs_attention?'Требуется внимание':current.state === 'ready' ? 'Профиль готов' : 'Применяется на сервере') : 'Профиль не выпущен')); card.append(meta);
   if(applying){const progress=node('div','profile-progress');progress.setAttribute('role','status');const spinner=node('span','spinner');spinner.setAttribute('aria-hidden','true');const text=node('div');text.append(node('strong','','Готовим профиль…'),node('p','small muted','Применяем настройки на сервере. Скачивание и QR появятся автоматически.'));progress.append(spinner,text);card.append(progress);}
   if (current?.needs_attention) card.append(node('p','form-error','Не удалось применить изменения. Администратору нужно проверить сервер.'));
   if (current) {card.append(node('p', 'small muted', `${current.server_name} · версия ${current.revision}`));const service=state.services.find(s=>s.id===current.server_id);if(service){card.append(locationLabel(service),node('p','small muted',serviceStatus(service)));}if(current.state==='ready')card.append(node('p','small muted',current.server_id!==state.vpn.server_id?'Доступен новый основной сервер — перевыпустите профиль':'Профиль для текущего сервера'));}
+  const historical=profiles.filter(p=>p!==current && ['archived','revoked'].includes(p.state));
+  if(historical.length){
+   const history=node('details','profile-cleanup');
+   history.dataset.deviceId=device.id+'-history';
+   history.open=expandedCleanup.has(history.dataset.deviceId);
+   history.append(node('summary','','Прежние профили'));
+   for(const p of historical)history.append(node('p','small muted',`${p.server_name} · версия ${p.revision}`));
+   card.append(history);
+  }
   const revoking=profiles.filter(p=>p.state==='revoking');
   if(revoking.length){const details=node('details','profile-cleanup');details.dataset.deviceId=device.id;details.open=expandedCleanup.has(device.id);details.append(node('summary','','Старые ключи: ожидается подтверждение отзыва'),node('p','small muted',`Серверы: ${[...new Set(revoking.map(p=>p.server_name))].join(', ')}. Пока сервер не подтвердит удаление, старые ключи считаются неотозванными.`));if(current?.state==='ready')details.append(node('p','small muted','Новый профиль готов: его можно скачать и импортировать, не дожидаясь отзыва старого.'));card.append(details);}
   const controls = node('div','card-actions');
@@ -71,7 +81,7 @@ async function loadDevices() {
   }
   const issue=node('button','button secondary',applying?'Подготовка профиля…':current?'Перевыпустить AWG':'Выпустить AWG'); issue.disabled=!state.vpn.available || current?.state==='pending';
   issue.addEventListener('click',()=>confirmProfile(device,'issue')); controls.append(issue);
-  if (profiles.length) { const revoke=node('button','button secondary','Отозвать'); revoke.addEventListener('click',()=>confirmProfile(device,'revoke')); controls.append(revoke); }
+  if (profiles.some(p=>p.desired || p.state==='revoking')) { const revoke=node('button','button secondary','Отозвать'); revoke.addEventListener('click',()=>confirmProfile(device,'revoke')); controls.append(revoke); }
   if (!state.vpn.available) card.append(node('p','small muted','Администратор должен выбрать готовый основной сервер.'));
   const stats=node('button','button secondary','Статистика');stats.addEventListener('click',()=>openDeviceTraffic(device.id));controls.append(stats);card.append(controls);if(device.platform!=='gateway')renderXrayDevice(card,device); container.append(card);
  }
@@ -80,6 +90,16 @@ async function loadServers() {
  [state.servers,state.jobs,state.sshKeys,state.monitors,state.health,state.xrayNodes] = await Promise.all([api('/api/admin/servers'),api('/api/admin/jobs'),api('/api/admin/ssh-keys'),api('/api/admin/monitoring'),api('/api/health'),api('/api/admin/xray')]); renderSSHKeys(); const container = $('#servers'); container.replaceChildren(); $('#server-empty').hidden = state.servers.length > 0;
  for (const server of state.servers) {
   const card=node('article','server-card'); const top=node('div','card-top');
+  if(server.deleted_at){
+   card.append(node('h3','',server.name),node('p','small muted',`Удалён из панели ${dateLabel(server.deleted_at)}`));
+   if(state.monitors.some(m=>m.server_id===server.id && m.latest)){
+    const details=node('details');
+    details.append(node('summary','','Последние измерения'),serverMonitoring(server));
+    card.append(details);
+   }
+   container.append(card);
+   continue;
+  }
   const names={new:'Не развёрнут',checked:'SSH проверен',deploying:'Разворачивается',ready:'Развёрнут'};
   top.append(node('h3','',server.name),node('span','badge',server.is_default?'Основной сервер':(names[server.vpn_state]||server.vpn_state)));
   card.append(top,node('p','server-address',`${server.ssh_user}@${server.hostname}:${server.ssh_port}`));
@@ -103,12 +123,16 @@ async function loadServers() {
    state.deploying=server.id;const form=$('#deploy-form');form.elements.endpoint.value=server.endpoint||server.hostname;form.elements.port.value=server.vpn_port||51820;form.elements.endpoint.readOnly=!!server.endpoint;form.elements.port.readOnly=!!server.endpoint;openDialog('deploy');
   });controls.append(deploy);
   if(server.vpn_state==='ready'&&!server.is_default){const main=node('button','button primary','Сделать основным');main.addEventListener('click',()=>serverAction(server.id,'default'));controls.append(main);}
-  const place=node('button','button secondary','Страна и город');place.addEventListener('click',()=>editLocation(server));controls.append(place,maintenanceButton(server));card.append(locationLabel(server),node('p','small',healthLabel(server.id)),node('p','small muted','Проверка с VPS: туннель, DNS и HTTPS. Доступ из сети устройства не проверяется.'),controls,serverMonitoring(server));container.append(card);
+  const edit=node('button','button secondary','Редактировать');
+  edit.addEventListener('click',()=>openServerForm(server));
+  const remove=node('button','button secondary','Удалить сервер');
+  remove.addEventListener('click',()=>deleteServer(server));
+  controls.append(edit,maintenanceButton(server),remove);card.append(locationLabel(server),node('p','small',healthLabel(server.id)),node('p','small muted','Проверка с VPS: туннель, DNS и HTTPS. Доступ из сети устройства не проверяется.'),controls,serverMonitoring(server));container.append(card);
  }
 }
 async function loadEvents() {
  const events = await api('/api/admin/events'); const tbody = $('#events'); tbody.replaceChildren(); $('#event-empty').hidden = events.length > 0; $('#events-view .table-wrap').hidden = !events.length;
- for (const event of events) { const row = node('tr'); row.append(node('td', '', actions[event.action] || event.action), node('td', '', event.actor), node('td', '', new Date(event.created_at).toLocaleString('ru-RU'))); tbody.append(row); }
+ for (const event of events) { const row = node('tr'); row.append(node('td', '', [actions[event.action] || event.action,event.server_name].filter(Boolean).join(' · ')), node('td', '', event.actor), node('td', '', new Date(event.created_at).toLocaleString('ru-RU'))); tbody.append(row); }
 }
 async function changeView(view,{history:historyMode='push'}={}) {
  if(!state.me)return;
@@ -139,16 +163,58 @@ $$('[data-close]').forEach(button => button.addEventListener('click', () => butt
 $$('dialog').forEach(dialog => dialog.addEventListener('close', () => { $$('textarea, input[type="password"]', dialog).forEach(el => { el.value = ''; }); }));
 $$('[data-view]').forEach(button => button.addEventListener('click', () => changeView(button.dataset.view)));
 window.addEventListener('popstate',()=>changeView(new URLSearchParams(location.search).get('view')||'devices',{history:'replace'}));
-$('#add').addEventListener('click', () => openDialog(state.view === 'devices' ? 'device' : state.view==='gateways'?'gateway':'server'));
-$('#empty-add-device').addEventListener('click', () => openDialog('device')); $('#empty-add-server').addEventListener('click', () => openDialog('server'));
+$('#add').addEventListener('click', () => state.view==='servers'?openServerForm():openDialog(state.view==='gateways'?'gateway':'device'));
+$('#empty-add-device').addEventListener('click', () => openDialog('device')); $('#empty-add-server').addEventListener('click', () => openServerForm());
 $('#logout').addEventListener('click', async () => { try { await api('/api/logout', { method: 'POST' }); state.me = null; location.reload(); } catch (error) { notify(error.message); } });
 $('#dev-login').addEventListener('click', async event => { event.currentTarget.disabled = true; try { await api('/auth/dev', { method: 'POST' }); await start(); } catch (error) { $('#login-error').textContent = error.message; } finally { $('#dev-login').disabled = false; } });
 bindForm('device', async form => { await api('/api/devices', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form))) }); $('#device-dialog').close(); form.reset(); await loadDevices(); notify('Устройство добавлено'); });
-bindForm('server', async form => { const data = Object.fromEntries(new FormData(form)); data.ssh_port = Number(data.ssh_port); await api('/api/admin/servers', { method: 'POST', body: JSON.stringify(data) }); $('#server-dialog').close(); form.reset(); updateSSHMethod(); updateHostPolicy(); await loadServers(); notify('Сервер сохранён'); });
+function openServerForm(server=null){
+ editingServer=server;
+ const form=$('#server-form'), fields=form.elements;
+ form.reset();
+ $('#server-dialog h2').textContent=server?'Редактировать сервер':'Новый сервер';
+ $('#server-pin-policy').hidden=!!server;
+ fields.host_key_policy.disabled=!!server;
+ $('#server-endpoint').hidden=!server?.endpoint;
+ fields.endpoint.disabled=!server?.endpoint;
+ fields.endpoint.required=!!server?.endpoint;
+ $('#server-edit-help').hidden=!server;
+ if(server){
+  for(const key of ['name','hostname','ssh_port','ssh_user','country_code','city','ssh_auth_method','ssh_key_id','endpoint']){
+   fields[key].value=server[key]??'';
+  }
+ }
+ updateSSHMethod();
+ updateHostPolicy();
+ openDialog('server');
+}
+async function deleteServer(server){
+ const warning=server.is_default?' Для выпуска новых профилей AWG потребуется выбрать другой основной сервер.':'';
+ if(!confirm(`Удалить «${server.name}» из Củ Chi? Имя и история сохранятся. Панель прекратит управление VPS. Запущенный на нём VPN и импортированные ключи могут продолжить работать.${warning}`))return;
+ try{
+  await api(`/api/admin/servers/${server.id}`,{method:'DELETE'});
+  await loadServers();
+  notify('Сервер удалён');
+ }catch(error){notify(error.message);}
+}
+bindForm('server', async form => {
+ const data=Object.fromEntries(new FormData(form));
+ data.ssh_port=Number(data.ssh_port);
+ if(editingServer)data.edit_revision=editingServer.edit_revision;
+ const path=editingServer?`/api/admin/servers/${editingServer.id}`:'/api/admin/servers';
+ await api(path,{method:editingServer?'PUT':'POST',body:JSON.stringify(data)});
+ $('#server-dialog').close();
+ await loadServers();
+ notify('Сервер сохранён');
+});
 bindForm('delete', async () => { await api(`/api/devices/${state.deleting}`, { method: 'DELETE' }); $('#delete-dialog').close(); state.deleting = null; await loadDevices(); notify('Устройство удалено'); });
 function confirmProfile(device,action){
  state.profileAction={device,action}; $('#profile-title').textContent=action==='issue'?'Выпустить новый профиль?':'Отозвать профили?';
  $('#profile-description').textContent=action==='issue'?`Устройство «${device.name}», сервер «${state.vpn.server_name}». Старые ключи будут отозваны. После завершения импортируйте новый профиль в AmneziaWG; одно устройство — один профиль.`:`Ключи устройства «${device.name}» будут удалены со всех серверов. Недоступные серверы останутся в ожидании отзыва.`;
+ if(state.profiles.some(p=>p.device_id===device.id && p.state==='archived')){
+  $('#profile-description').textContent=action==='issue'?`Устройство «${device.name}», новый профиль на сервере «${state.vpn.server_name}». После выпуска импортируйте его в AmneziaWG.`:`Отозвать профили устройства «${device.name}» на управляемых серверах?`;
+  $('#profile-description').textContent+=' На удалённом из панели VPS старые ключи могут продолжать работать.';
+ }
  openDialog('profile');
 }
 async function serverAction(id,action){try{await api(`/api/admin/servers/${id}/${action}`,{method:'POST'});await loadServers();notify(action==='default'?'Основной сервер изменён':'Задание поставлено в очередь');}catch(e){notify(e.message);}}
@@ -168,11 +234,13 @@ bindForm('profile',async form=>{
 });
 $('#qr-dialog').addEventListener('close',()=>$('#profile-qr').removeAttribute('src'));
 setInterval(async()=>{if(!state.me||state.loading||document.hidden||$('dialog[open]')||$('#servers details[open]'))return;state.loading=true;try{if(state.view==='servers')await loadServers();if(state.view==='gateways')await loadGateways();if(state.view==='devices')await loadDevices();if(state.view==='traffic')await loadTraffic();}catch(e){$('#page-error').textContent=e.message;$('#page-error').hidden=false;}finally{state.loading=false;}},5000);
-function updateHostPolicy(){const field=$('#server-form').elements.host_key_fingerprint;const manual=$('#server-form').elements.host_key_policy.value==='manual';$('#host-fingerprint-field').hidden=!manual;$('#host-fingerprint-help').hidden=!manual;field.disabled=!manual;field.required=manual;if(!manual)field.value='';}
+function updateHostPolicy(){const field=$('#server-form').elements.host_key_fingerprint;const manual=!editingServer && $('#server-form').elements.host_key_policy.value==='manual';$('#host-fingerprint-field').hidden=!manual;$('#host-fingerprint-help').hidden=!manual;field.disabled=!manual;field.required=manual;if(!manual)field.value='';}
 $('#server-form').elements.host_key_policy.addEventListener('change',updateHostPolicy);
 function updateSSHMethod() {
  const method=$('#server-form').elements.ssh_auth_method.value;
- $$('[data-ssh-method]').forEach(label=>{const active=label.dataset.sshMethod===method;label.hidden=!active;const field=$('input,textarea,select',label);field.disabled=!active;field.required=active;if(!active&&field.tagName!=='SELECT')field.value='';});
+ const keep=editingServer?.ssh_auth_method===method && method!=='saved_key';
+ $('#keep-credential').hidden=!keep;
+ $$('[data-ssh-method]').forEach(label=>{const active=label.dataset.sshMethod===method;label.hidden=!active;const field=$('input,textarea,select',label);field.disabled=!active;field.required=active&&!keep;if(!active&&field.tagName!=='SELECT')field.value='';});
 }
 $('#server-form').elements.ssh_auth_method.addEventListener('change',updateSSHMethod);
 function updateKeyImport(){const label=$('#ssh-key-import');const active=$('#ssh-key-form').elements.mode.value==='import';label.hidden=!active;const field=$('textarea',label);field.disabled=!active;field.required=active;if(!active)field.value='';}

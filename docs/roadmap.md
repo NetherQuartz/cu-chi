@@ -79,3 +79,5 @@ Real WARP acceptance completed on an owner-supplied dedicated VPS (2026-11-18): 
 
 
 Xray VLESS/Vision + REALITY with automatic target selection, per-device subscriptions and independent VPS deployment is implemented. The owner confirmed the earlier WARP rollout through the NAS portal.
+
+Administrator server editing and retirement are implemented. The same VPS can change address or login credentials, and retired servers keep labelled history. Automatic provider-side decommissioning and timed profile overlap remain outside this feature.

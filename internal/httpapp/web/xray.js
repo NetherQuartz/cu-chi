@@ -33,9 +33,12 @@ function renderXrayServer(card,server) {
 function renderXrayDevice(card,device) {
  const {devices,servers}=state.xray;
  const grant=devices.find(d=>d.device_id===device.id);
- if(!servers.length&&!grant)return;
+ const history=state.xray.archived_servers[device.id]||[];
+ if(!servers.length&&!grant&&!history.length)return;
  const box=node('div','egress-control'),path=`/api/devices/${device.id}/xray`;
  box.append(node('strong','','Xray · VLESS'));
+ if(history.length)box.append(node('p','small muted',`Прежние серверы: ${history.join(', ')}`));
+ if(!grant && !servers.length){card.append(box);return;}
  if(!grant)box.append(xrayButton('Выпустить Xray',async()=>{
   await api(path,{method:'POST'});await loadDevices();
  }));
@@ -45,7 +48,7 @@ function renderXrayDevice(card,device) {
    const data=await api(path+'/import');
    $('#xray-url').value=data.subscription;$('#xray-links').value=data.links.join('\n');$('#xray-qr').src=path+'/import?qr=1';$('#xray-import').showModal();
   }));
-  else box.append(node('p','small muted','Подписка появится после применения на сервере'));
+  else box.append(node('p','small muted',servers.length?'Подписка появится после применения на сервере':'Доступных серверов Xray пока нет'));
   box.append(xrayButton('Отозвать Xray',async()=>{
    if(confirm(`Отозвать доступ Xray для «${device.name}» на всех серверах?`)){await api(path,{method:'DELETE'});await loadDevices();}
   }));

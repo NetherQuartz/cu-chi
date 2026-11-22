@@ -157,8 +157,12 @@ func (a *App) vpnError(w http.ResponseWriter, err error) bool {
 	}
 	if errors.Is(err, store.ErrNotFound) {
 		apiError(w, 404, "Не найдено")
+	} else if errors.Is(err, store.ErrServerChanged) {
+		apiError(w, 409, "Параметры сервера изменились. Откройте форму заново.")
+	} else if errors.Is(err, store.ErrServerBusy) {
+		apiError(w, 409, "Выполняется операция на VPS. Повторите после её завершения.")
 	} else if errors.Is(err, store.ErrConflict) {
-		apiError(w, 409, "Операция пока недоступна: дождитесь применения профиля, выберите готовый сервер или завершите отзыв. Адрес и порт развёрнутого сервера менять нельзя.")
+		apiError(w, 409, "Операция пока недоступна: дождитесь применения профиля, выберите готовый сервер или завершите отзыв.")
 	} else {
 		a.failure(w, err)
 	}

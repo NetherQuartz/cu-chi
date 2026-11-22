@@ -20,6 +20,11 @@ func (w *Worker) probeNext(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	guard, lockErr := w.DB.BeginServerUse(ctx, id)
+	if lockErr != nil {
+		return
+	}
+	defer guard.Rollback(context.Background())
 	t, err := w.DB.Target(ctx, id)
 	if err != nil {
 		return

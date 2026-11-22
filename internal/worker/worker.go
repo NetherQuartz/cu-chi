@@ -89,13 +89,7 @@ func (w *Worker) lead(ctx context.Context) {
 			return
 		}
 		op, cancel := context.WithTimeout(ctx, 20*time.Minute)
-		t, err := w.DB.Target(op, j.ServerID)
-		if err == nil {
-			if j.Kind != "check" && t.Generation > 0 {
-				w.observe(op, t)
-			}
-			err = w.Execute(op, j, t)
-		}
+		t, err := w.runServerJob(op, j)
 		cancel()
 		failure := ""
 		if err != nil {
@@ -110,6 +104,21 @@ func (w *Worker) lead(ctx context.Context) {
 		}
 		done()
 	}
+}
+func (w *Worker) runServerJob(ctx context.Context, j store.Job) (store.Target, error) {
+	guard, err := w.DB.BeginServerUse(ctx, j.ServerID)
+	if err != nil {
+		return store.Target{}, err
+	}
+	defer guard.Rollback(context.Background())
+	t, err := w.DB.Target(ctx, j.ServerID)
+	if err != nil {
+		return t, err
+	}
+	if j.Kind != "check" && t.Generation > 0 {
+		w.observe(ctx, t)
+	}
+	return t, w.Execute(ctx, j, t)
 }
 func (w *Worker) Execute(ctx context.Context, j store.Job, t store.Target) error {
 	c, key, err := w.credentials(t)
@@ -200,6 +209,11 @@ func (w *Worker) observeNext(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	guard, lockErr := w.DB.BeginServerUse(ctx, id)
+	if lockErr != nil {
+		return
+	}
+	defer guard.Rollback(context.Background())
 	t, err := w.DB.Target(ctx, id)
 	if err != nil {
 		return

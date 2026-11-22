@@ -19,7 +19,7 @@ func (s *Store) QueueEgress(ctx context.Context, u User, id, mode string) (strin
 	var ready, busy bool
 	var failure string
 	var desired, applied string
-	err = tx.QueryRow(ctx, `SELECT vpn_state='ready',egress_mode,applied_egress_mode,vpn_error,EXISTS(SELECT 1 FROM jobs WHERE server_id=servers.id AND status IN ('queued','running')) FROM servers WHERE id=$1 FOR UPDATE`, id).Scan(&ready, &desired, &applied, &failure, &busy)
+	err = tx.QueryRow(ctx, `SELECT vpn_state='ready',egress_mode,applied_egress_mode,vpn_error,EXISTS(SELECT 1 FROM jobs WHERE server_id=servers.id AND status IN ('queued','running')) FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, id).Scan(&ready, &desired, &applied, &failure, &busy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrNotFound
 	}
@@ -50,6 +50,6 @@ func (s *Store) QueueEgress(ctx context.Context, u User, id, mode string) (strin
 // First registration is immutable and encrypted under a server-specific namespace.
 func (s *Store) SaveWarpConfig(ctx context.Context, id string, encrypted []byte) ([]byte, error) {
 	var saved []byte
-	err := s.Pool.QueryRow(ctx, `UPDATE servers SET encrypted_warp_config=COALESCE(encrypted_warp_config,$2) WHERE id=$1 RETURNING encrypted_warp_config`, id, encrypted).Scan(&saved)
+	err := s.Pool.QueryRow(ctx, `UPDATE servers SET encrypted_warp_config=COALESCE(encrypted_warp_config,$2) WHERE id=$1 AND deleted_at IS NULL RETURNING encrypted_warp_config`, id, encrypted).Scan(&saved)
 	return saved, err
 }

@@ -20,11 +20,11 @@ type Health struct {
 
 func (s *Store) NextProbe(ctx context.Context) (string, error) {
 	var id string
-	err := s.Pool.QueryRow(ctx, `SELECT s.id::text FROM servers s LEFT JOIN health_state h ON h.server_id=s.id WHERE s.applied_generation>0 AND s.desired_generation=s.applied_generation AND (s.maintenance_until IS NULL OR s.maintenance_until<now()) AND (h.attempted_at IS NULL OR h.attempted_at<now()-interval '5 minutes') AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.server_id=s.id AND j.status IN ('queued','running')) ORDER BY h.attempted_at NULLS FIRST LIMIT 1`).Scan(&id)
+	err := s.Pool.QueryRow(ctx, `SELECT s.id::text FROM servers s LEFT JOIN health_state h ON h.server_id=s.id WHERE s.deleted_at IS NULL AND s.applied_generation>0 AND s.desired_generation=s.applied_generation AND (s.maintenance_until IS NULL OR s.maintenance_until<now()) AND (h.attempted_at IS NULL OR h.attempted_at<now()-interval '5 minutes') AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.server_id=s.id AND j.status IN ('queued','running')) ORDER BY h.attempted_at NULLS FIRST LIMIT 1`).Scan(&id)
 	return id, err
 }
 func (s *Store) Health(ctx context.Context, u User) ([]Health, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT s.id::text,h.attempted_at,COALESCE(h.result,''),COALESCE(h.failures,0),COALESCE(h.successes,0),COALESCE(h.incident_id::text,''),COALESCE(h.incident_kind,''),h.opened_at,s.maintenance_until FROM servers s LEFT JOIN health_state h ON h.server_id=s.id WHERE $2 OR EXISTS(SELECT 1 FROM profiles p JOIN devices d ON d.id=p.device_id WHERE p.server_id=s.id AND d.user_id=$1 AND p.state<>'revoked') OR s.id=(SELECT default_server_id FROM vpn_preferences)`, u.ID, u.Role == "admin")
+	rows, err := s.Pool.Query(ctx, `SELECT s.id::text,h.attempted_at,COALESCE(h.result,''),COALESCE(h.failures,0),COALESCE(h.successes,0),COALESCE(h.incident_id::text,''),COALESCE(h.incident_kind,''),h.opened_at,s.maintenance_until FROM servers s LEFT JOIN health_state h ON h.server_id=s.id WHERE s.deleted_at IS NULL AND ($2 OR EXISTS(SELECT 1 FROM profiles p JOIN devices d ON d.id=p.device_id WHERE p.server_id=s.id AND d.user_id=$1 AND p.state<>'revoked') OR s.id=(SELECT default_server_id FROM vpn_preferences))`, u.ID, u.Role == "admin")
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (s *Store) SaveProbe(ctx context.Context, id string, generation int64, at t
 	defer tx.Rollback(ctx)
 	var eligible bool
 	// Serialize against registration, maintenance and generation changes.
-	if err = tx.QueryRow(ctx, `SELECT desired_generation=$2 AND applied_generation=$2 AND (maintenance_until IS NULL OR maintenance_until<$3) FROM servers WHERE id=$1 FOR UPDATE`, id, generation, at).Scan(&eligible); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT deleted_at IS NULL AND desired_generation=$2 AND applied_generation=$2 AND (maintenance_until IS NULL OR maintenance_until<$3) FROM servers WHERE id=$1 FOR UPDATE`, id, generation, at).Scan(&eligible); err != nil {
 		return err
 	}
 	var busy bool
@@ -143,7 +143,7 @@ func (s *Store) Maintenance(ctx context.Context, u User, id string, minutes int)
 		return err
 	}
 	defer tx.Rollback(ctx)
-	r, err := tx.Exec(ctx, `UPDATE servers SET maintenance_until=CASE WHEN $2=0 THEN NULL ELSE now()+make_interval(mins=>$2) END WHERE id=$1`, id, minutes)
+	r, err := tx.Exec(ctx, `UPDATE servers SET maintenance_until=CASE WHEN $2=0 THEN NULL ELSE now()+make_interval(mins=>$2) END WHERE id=$1 AND deleted_at IS NULL`, id, minutes)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ type Notification struct {
 }
 
 func (s *Store) Inbox(ctx context.Context, u User) ([]Notification, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT n.id::text,n.kind,n.severity,COALESCE(s.name,g.name,''),n.created_at,n.read_at,COALESCE(n.gateway_id::text,''),n.actor_names,n.operation FROM notifications n LEFT JOIN servers s ON s.id=n.server_id LEFT JOIN gateways g ON g.id=n.gateway_id WHERE n.user_id=$1 AND ($2 OR n.kind NOT IN ('management','job_failed')) ORDER BY n.created_at DESC LIMIT 100`, u.ID, u.Role == "admin")
+	rows, err := s.Pool.Query(ctx, `SELECT n.id::text,n.kind,n.severity,COALESCE(s.display_name,g.name,''),n.created_at,n.read_at,COALESCE(n.gateway_id::text,''),n.actor_names,n.operation FROM notifications n LEFT JOIN servers s ON s.id=n.server_id LEFT JOIN gateways g ON g.id=n.gateway_id WHERE n.user_id=$1 AND ($2 OR n.kind NOT IN ('management','job_failed')) ORDER BY n.created_at DESC LIMIT 100`, u.ID, u.Role == "admin")
 	if err != nil {
 		return nil, err
 	}

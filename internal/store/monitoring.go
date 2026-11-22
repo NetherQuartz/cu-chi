@@ -21,7 +21,7 @@ type Monitor struct {
 
 func (s *Store) NextMonitor(ctx context.Context) (string, error) {
 	var id string
-	err := s.Pool.QueryRow(ctx, `SELECT s.id::text FROM servers s LEFT JOIN monitor_state m ON m.server_id=s.id WHERE s.applied_generation>0 AND (m.attempted_at IS NULL OR m.attempted_at<now()-interval '60 seconds') AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.server_id=s.id AND j.status IN ('queued','running')) ORDER BY m.attempted_at NULLS FIRST LIMIT 1`).Scan(&id)
+	err := s.Pool.QueryRow(ctx, `SELECT s.id::text FROM servers s LEFT JOIN monitor_state m ON m.server_id=s.id WHERE s.deleted_at IS NULL AND s.applied_generation>0 AND (m.attempted_at IS NULL OR m.attempted_at<now()-interval '60 seconds') AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.server_id=s.id AND j.status IN ('queued','running')) ORDER BY m.attempted_at NULLS FIRST LIMIT 1`).Scan(&id)
 	return id, err
 }
 func (s *Store) SaveObservation(ctx context.Context, id string, v telemetry.Sample, failure string) error {
@@ -173,7 +173,7 @@ func (s *Store) SetLocation(ctx context.Context, u User, id, country, city strin
 		return err
 	}
 	defer tx.Rollback(ctx)
-	result, err := tx.Exec(ctx, `UPDATE servers SET country_code=$2,city=$3 WHERE id=$1`, id, country, city)
+	result, err := tx.Exec(ctx, `UPDATE servers SET country_code=$2,city=$3,edit_revision=edit_revision+1 WHERE id=$1 AND deleted_at IS NULL`, id, country, city)
 	if err != nil {
 		return err
 	}
@@ -230,7 +230,7 @@ const trafficWhere = ` WHERE ($2 OR t.user_id=$1::uuid) AND ($3='' OR t.user_id=
 func (s *Store) Traffic(ctx context.Context, u User, f TrafficFilter) (Traffic, error) {
 	out := Traffic{Rows: []TrafficRow{}, History: []TrafficPoint{}, Since: f.Since, Bucket: f.Bucket}
 	args := []any{u.ID, u.Role == "admin", f.UserID, f.DeviceID, f.ServerID, f.Since}
-	rows, err := s.Pool.Query(ctx, `SELECT t.user_id::text,u.username,t.device_id::text,t.device_name,t.server_id::text,s.name,s.country_code,s.city,t.upload,t.download,t.first_at,t.last_at,t.handshake,COALESCE(sum(p.upload),0)::bigint,COALESCE(sum(p.download),0)::bigint,count(*) FILTER(WHERE p.gap)::int,(SELECT CASE WHEN NOT x.gap AND x.seconds>0 AND x.at>now()-interval '3 minutes' THEN x.upload/x.seconds END FROM traffic_samples x WHERE x.device_id=t.device_id AND x.server_id=t.server_id ORDER BY x.at DESC LIMIT 1),(SELECT CASE WHEN NOT x.gap AND x.seconds>0 AND x.at>now()-interval '3 minutes' THEN x.download/x.seconds END FROM traffic_samples x WHERE x.device_id=t.device_id AND x.server_id=t.server_id ORDER BY x.at DESC LIMIT 1) FROM traffic_totals t JOIN users u ON u.id=t.user_id JOIN servers s ON s.id=t.server_id LEFT JOIN traffic_samples p ON p.device_id=t.device_id AND p.server_id=t.server_id AND p.at>=$6`+trafficWhere+` GROUP BY t.device_id,t.server_id,u.username,s.name,s.country_code,s.city ORDER BY t.last_at DESC`, args...)
+	rows, err := s.Pool.Query(ctx, `SELECT t.user_id::text,u.username,t.device_id::text,t.device_name,t.server_id::text,s.display_name,s.country_code,s.city,t.upload,t.download,t.first_at,t.last_at,t.handshake,COALESCE(sum(p.upload),0)::bigint,COALESCE(sum(p.download),0)::bigint,count(*) FILTER(WHERE p.gap)::int,(SELECT CASE WHEN NOT x.gap AND x.seconds>0 AND x.at>now()-interval '3 minutes' THEN x.upload/x.seconds END FROM traffic_samples x WHERE x.device_id=t.device_id AND x.server_id=t.server_id ORDER BY x.at DESC LIMIT 1),(SELECT CASE WHEN NOT x.gap AND x.seconds>0 AND x.at>now()-interval '3 minutes' THEN x.download/x.seconds END FROM traffic_samples x WHERE x.device_id=t.device_id AND x.server_id=t.server_id ORDER BY x.at DESC LIMIT 1) FROM traffic_totals t JOIN users u ON u.id=t.user_id JOIN servers s ON s.id=t.server_id LEFT JOIN traffic_samples p ON p.device_id=t.device_id AND p.server_id=t.server_id AND p.at>=$6`+trafficWhere+` GROUP BY t.device_id,t.server_id,u.username,s.display_name,s.country_code,s.city ORDER BY t.last_at DESC`, args...)
 	if err != nil {
 		return out, err
 	}
@@ -276,7 +276,7 @@ type Service struct {
 }
 
 func (s *Store) Services(ctx context.Context, u User) ([]Service, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT s.id::text,s.name,s.country_code,s.city,COALESCE(v.default_server_id=s.id,false),m.attempted_at,m.succeeded_at,(m.sample->>'tunnel')::boolean,COALESCE(m.failures,0) FROM servers s CROSS JOIN vpn_preferences v LEFT JOIN monitor_state m ON m.server_id=s.id WHERE s.id=v.default_server_id OR EXISTS(SELECT 1 FROM profiles p JOIN devices d ON p.device_id=d.id WHERE p.server_id=s.id AND p.state<>'revoked' AND (d.user_id=$1 OR $2)) ORDER BY s.name`, u.ID, u.Role == "admin")
+	rows, err := s.Pool.Query(ctx, `SELECT s.id::text,s.display_name,s.country_code,s.city,COALESCE(v.default_server_id=s.id,false),m.attempted_at,m.succeeded_at,(m.sample->>'tunnel')::boolean,COALESCE(m.failures,0) FROM servers s CROSS JOIN vpn_preferences v LEFT JOIN monitor_state m ON m.server_id=s.id WHERE s.id=v.default_server_id OR EXISTS(SELECT 1 FROM profiles p JOIN devices d ON p.device_id=d.id WHERE p.server_id=s.id AND p.state NOT IN ('revoked','archived') AND (d.user_id=$1 OR $2)) ORDER BY s.name`, u.ID, u.Role == "admin")
 	if err != nil {
 		return nil, err
 	}

@@ -46,7 +46,7 @@ func (s *Store) XDeploy(ctx context.Context, u User, id string, key []byte, pub,
 		return e
 	}
 	defer tx.Rollback(ctx)
-	tag, e := tx.Exec(ctx, `INSERT INTO xray_nodes(server_id,identity,public_key,short_id,published) SELECT id,$2,$3,$4,$5 FROM servers WHERE id=$1 ON CONFLICT(server_id) DO UPDATE SET revision=nextval('xray_revision'),retry_at=now(),error=''`, id, key, pub, short, published)
+	tag, e := tx.Exec(ctx, `INSERT INTO xray_nodes(server_id,identity,public_key,short_id,published) SELECT id,$2,$3,$4,$5 FROM servers WHERE id=$1 AND deleted_at IS NULL ON CONFLICT(server_id) DO UPDATE SET revision=nextval('xray_revision'),retry_at=now(),error=''`, id, key, pub, short, published)
 	if e != nil {
 		return e
 	}
@@ -154,10 +154,34 @@ func (s *Store) XChange(ctx context.Context, u User, id string, issue bool, secr
 	if _, e = tx.Exec(ctx, "UPDATE xray_nodes SET revision=$1,retry_at=now(),error=''", rev); e != nil {
 		return e
 	}
+	if !issue {
+		if e = pruneRevokedXDevices(ctx, tx); e != nil {
+			return e
+		}
+	}
 	if e = audit(ctx, tx, u.ID, action, id); e != nil {
 		return e
 	}
 	return tx.Commit(ctx)
+}
+
+func (s *Store) ArchivedXServers(ctx context.Context, u User) (map[string][]string, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT a.device_id,s.display_name FROM archived_xray_devices a
+ JOIN servers s ON s.id=a.server_id JOIN devices d ON d.id=a.device_id
+ WHERE d.user_id=$1 OR $2 ORDER BY s.display_name,s.id`, u.ID, u.Role == "admin")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var id, name string
+		if err = rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], name)
+	}
+	return out, rows.Err()
 }
 
 type XWork struct {
@@ -209,13 +233,17 @@ func (s *Store) XFinish(ctx context.Context, w XWork, sni, failure string) error
 			e = announceXrayAvailability(ctx, tx, w.ID)
 		}
 		if e == nil {
-			_, e = tx.Exec(ctx, "DELETE FROM xray_devices d WHERE NOT desired AND NOT EXISTS(SELECT 1 FROM xray_nodes n WHERE n.applied<d.revision)")
+			e = pruneRevokedXDevices(ctx, tx)
 		}
 	}
 	if e != nil {
 		return e
 	}
 	return tx.Commit(ctx)
+}
+func pruneRevokedXDevices(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx, "DELETE FROM xray_devices d WHERE NOT desired AND NOT EXISTS(SELECT 1 FROM xray_nodes n WHERE n.applied<d.revision)")
+	return err
 }
 func (s *Store) XSecret(ctx context.Context, u User, id, hash string) (XDevice, error) {
 	var d XDevice

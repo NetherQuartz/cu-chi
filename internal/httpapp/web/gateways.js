@@ -12,7 +12,9 @@ async function loadGateways(){
   top.append(node('h3','',g.name),node('span','badge',labels[g.state]||g.state));card.append(top,node('p','server-address',`${g.ssh_user}@${g.hostname}:${g.ssh_port} · Keenetic ${g.router_ip}`));
   const details=node('details');details.append(node('summary','','Отпечаток SSH-хоста'),node('code','',g.host_key_fingerprint));card.append(details);
   const current=profiles.find(p=>p.device_id===g.device_id&&p.desired),busy=['queued','running'].includes(g.state);
-  if(current){card.append(node('p','small',`${current.server_name} · профиль ${current.revision} · ${current.state==='ready'?'готов на VPS':'применяется на VPS'}`));if(current.server_id!==vpn.server_id)card.append(node('p','form-error','Основной VPS изменился: выпустите новый профиль, затем примените его на VM.'));}
+  if(g.applied_server_name)card.append(node('p','small muted',`На VM применён профиль сервера «${g.applied_server_name}»`));
+  if(current?.state==='archived'){card.append(node('p','small',`${current.server_name} · версия ${current.revision}. Выпустите новый профиль шлюза.`));}
+  else if(current){card.append(node('p','small',`${current.server_name} · профиль ${current.revision} · ${current.state==='ready'?'готов на VPS':'применяется на VPS'}`));if(current.server_id!==vpn.server_id)card.append(node('p','form-error','Основной VPS изменился: выпустите новый профиль, затем примените его на VM.'));}
   else card.append(node('p','small muted','Сначала выпустите отдельный профиль шлюза на основном VPS.'));
   if(g.applied_profile_id && g.applied_profile_id!==g.current_profile_id)card.append(node('p','form-error','На VM остался прежний профиль. Примените текущий профиль после его готовности.'));
   if(g.applied_at)card.append(node('p','small muted',`Туннель, DNS и HTTPS проверены при последнем успешном применении: ${dateLabel(g.applied_at)}. Это не текущий статус Keenetic.`));

@@ -29,15 +29,16 @@ type Profile struct {
 	EncryptedKeys  []byte    `json:"-"`
 }
 type Job struct {
-	RunToken  string    `json:"-"`
-	ID        string    `json:"id"`
-	ServerID  string    `json:"server_id"`
-	Kind      string    `json:"kind"`
-	Status    string    `json:"status"`
-	Stage     string    `json:"stage"`
-	Attempts  int       `json:"attempts"`
-	Error     string    `json:"error"`
-	CreatedAt time.Time `json:"created_at"`
+	ServerName string    `json:"server_name,omitempty"`
+	RunToken   string    `json:"-"`
+	ID         string    `json:"id"`
+	ServerID   string    `json:"server_id"`
+	Kind       string    `json:"kind"`
+	Status     string    `json:"status"`
+	Stage      string    `json:"stage"`
+	Attempts   int       `json:"attempts"`
+	Error      string    `json:"error"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 type Target struct {
 	Server
@@ -86,7 +87,7 @@ func (s *Store) QueueServer(ctx context.Context, u User, id, kind, endpoint stri
 	var oldEndpoint string
 	var oldPort int
 	var initialized bool
-	err = tx.QueryRow(ctx, "SELECT endpoint,vpn_port,encrypted_vpn_settings IS NOT NULL FROM servers WHERE id=$1 FOR UPDATE", id).Scan(&oldEndpoint, &oldPort, &initialized)
+	err = tx.QueryRow(ctx, "SELECT endpoint,vpn_port,encrypted_vpn_settings IS NOT NULL FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", id).Scan(&oldEndpoint, &oldPort, &initialized)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrNotFound
 	}
@@ -118,7 +119,7 @@ func (s *Store) SetDefaultServer(ctx context.Context, u User, id string) error {
 	}
 	defer tx.Rollback(ctx)
 	var ready bool
-	err = tx.QueryRow(ctx, "SELECT vpn_state='ready' FROM servers WHERE id=$1", id).Scan(&ready)
+	err = tx.QueryRow(ctx, "SELECT vpn_state='ready' FROM servers WHERE id=$1 AND deleted_at IS NULL", id).Scan(&ready)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -184,6 +185,9 @@ func (s *Store) Issue(ctx context.Context, u User, p Profile) (Profile, error) {
 	if pending {
 		return p, ErrConflict
 	}
+	if _, err = tx.Exec(ctx, "UPDATE profiles SET desired=false WHERE device_id=$1 AND state='archived' AND desired", deviceID); err != nil {
+		return p, err
+	}
 	rows, err := tx.Query(ctx, "UPDATE profiles SET desired=false,state='revoking' WHERE device_id=$1 AND desired RETURNING server_id::text", deviceID)
 	if err != nil {
 		return p, err
@@ -243,7 +247,10 @@ func (s *Store) Revoke(ctx context.Context, u User, deviceID string) error {
 	if err != nil {
 		return err
 	}
-	rows, err := tx.Query(ctx, "UPDATE profiles SET desired=false,state='revoking' WHERE device_id=$1 AND state<>'revoked' RETURNING server_id::text", deviceID)
+	if _, err = tx.Exec(ctx, "UPDATE profiles SET desired=false WHERE device_id=$1 AND state='archived' AND desired", deviceID); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, "UPDATE profiles SET desired=false,state='revoking' WHERE device_id=$1 AND state NOT IN ('revoked','archived') RETURNING server_id::text", deviceID)
 	if err != nil {
 		return err
 	}
@@ -275,7 +282,7 @@ func (s *Store) Revoke(ctx context.Context, u User, deviceID string) error {
 	return tx.Commit(ctx)
 }
 func (s *Store) Profiles(ctx context.Context, u User) ([]Profile, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT p.id::text,p.device_id::text,p.server_id::text,s.name,p.revision,p.address,p.public_key,p.state,p.desired,p.created_at,(p.desired AND p.state='pending' AND s.vpn_error<>'') FROM profiles p JOIN devices d ON d.id=p.device_id JOIN servers s ON s.id=p.server_id WHERE (d.user_id=$1 OR $2) AND p.state<>'revoked' ORDER BY p.revision DESC`, u.ID, u.Role == "admin")
+	rows, err := s.Pool.Query(ctx, `SELECT p.id::text,p.device_id::text,p.server_id::text,s.display_name,p.revision,p.address,p.public_key,p.state,p.desired,p.created_at,(p.desired AND p.state='pending' AND s.vpn_error<>'') FROM profiles p JOIN devices d ON d.id=p.device_id JOIN servers s ON s.id=p.server_id WHERE (d.user_id=$1 OR $2) AND (p.state<>'revoked' OR s.deleted_at IS NOT NULL) ORDER BY p.revision DESC`, u.ID, u.Role == "admin")
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +314,7 @@ func (s *Store) Target(ctx context.Context, id string) (Target, error) {
 	}
 	defer tx.Rollback(ctx)
 	var t Target
-	err = tx.QueryRow(ctx, `SELECT s.id::text,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,COALESCE(k.encrypted_private_key,s.encrypted_private_key),s.encrypted_vpn_settings,s.endpoint,s.vpn_port,s.desired_generation,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,''),s.egress_mode,s.applied_egress_mode,s.encrypted_warp_config FROM servers s LEFT JOIN ssh_keys k ON k.id=s.ssh_key_id WHERE s.id=$1`, id).Scan(&t.ID, &t.Hostname, &t.SSHPort, &t.SSHUser, &t.Fingerprint, &t.EncryptedKey, &t.EncryptedSettings, &t.Endpoint, &t.VPNPort, &t.Generation, &t.AuthMethod, &t.SSHKeyID, &t.EgressMode, &t.AppliedEgressMode, &t.EncryptedWarp)
+	err = tx.QueryRow(ctx, `SELECT s.id::text,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,COALESCE(k.encrypted_private_key,s.encrypted_private_key),s.encrypted_vpn_settings,s.endpoint,s.vpn_port,s.desired_generation,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,''),s.egress_mode,s.applied_egress_mode,s.encrypted_warp_config FROM servers s LEFT JOIN ssh_keys k ON k.id=s.ssh_key_id WHERE s.id=$1 AND s.deleted_at IS NULL`, id).Scan(&t.ID, &t.Hostname, &t.SSHPort, &t.SSHUser, &t.Fingerprint, &t.EncryptedKey, &t.EncryptedSettings, &t.Endpoint, &t.VPNPort, &t.Generation, &t.AuthMethod, &t.SSHKeyID, &t.EgressMode, &t.AppliedEgressMode, &t.EncryptedWarp)
 	if err != nil {
 		return t, err
 	}
@@ -332,7 +339,7 @@ func (s *Store) Target(ctx context.Context, id string) (Target, error) {
 	return t, tx.Commit(ctx)
 }
 func (s *Store) Jobs(ctx context.Context) ([]Job, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT id::text,server_id::text,kind,status,stage,attempts,error,created_at FROM jobs ORDER BY created_at DESC LIMIT 100")
+	rows, err := s.Pool.Query(ctx, "SELECT j.id::text,j.server_id::text,j.kind,j.status,j.stage,j.attempts,j.error,j.created_at,s.display_name FROM jobs j JOIN servers s ON s.id=j.server_id ORDER BY j.created_at DESC LIMIT 100")
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +347,7 @@ func (s *Store) Jobs(ctx context.Context) ([]Job, error) {
 	out := []Job{}
 	for rows.Next() {
 		var j Job
-		if err = rows.Scan(&j.ID, &j.ServerID, &j.Kind, &j.Status, &j.Stage, &j.Attempts, &j.Error, &j.CreatedAt); err != nil {
+		if err = rows.Scan(&j.ID, &j.ServerID, &j.Kind, &j.Status, &j.Stage, &j.Attempts, &j.Error, &j.CreatedAt, &j.ServerName); err != nil {
 			return nil, err
 		}
 		out = append(out, j)

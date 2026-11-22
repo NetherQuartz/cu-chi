@@ -37,28 +37,31 @@ type Device struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type Server struct {
-	EgressMode        string    `json:"egress_mode"`
-	AppliedEgressMode string    `json:"applied_egress_mode"`
-	MigrationCleanup  bool      `json:"migration_cleanup"`
-	CountryCode       string    `json:"country_code"`
-	City              string    `json:"city"`
-	HostKeyPolicy     string    `json:"host_key_policy"`
-	AuthMethod        string    `json:"ssh_auth_method"`
-	SSHKeyID          string    `json:"ssh_key_id,omitempty"`
-	ID                string    `json:"id"`
-	Name              string    `json:"name"`
-	Hostname          string    `json:"hostname"`
-	SSHPort           int       `json:"ssh_port"`
-	SSHUser           string    `json:"ssh_user"`
-	Fingerprint       string    `json:"host_key_fingerprint"`
-	CreatedAt         time.Time `json:"created_at"`
-	Endpoint          string    `json:"endpoint"`
-	VPNPort           int       `json:"vpn_port"`
-	VPNState          string    `json:"vpn_state"`
-	VPNError          string    `json:"vpn_error"`
-	Default           bool      `json:"is_default"`
+	EditRevision      int64      `json:"edit_revision"`
+	DeletedAt         *time.Time `json:"deleted_at,omitempty"`
+	EgressMode        string     `json:"egress_mode"`
+	AppliedEgressMode string     `json:"applied_egress_mode"`
+	MigrationCleanup  bool       `json:"migration_cleanup"`
+	CountryCode       string     `json:"country_code"`
+	City              string     `json:"city"`
+	HostKeyPolicy     string     `json:"host_key_policy"`
+	AuthMethod        string     `json:"ssh_auth_method"`
+	SSHKeyID          string     `json:"ssh_key_id,omitempty"`
+	ID                string     `json:"id"`
+	Name              string     `json:"name"`
+	Hostname          string     `json:"hostname"`
+	SSHPort           int        `json:"ssh_port"`
+	SSHUser           string     `json:"ssh_user"`
+	Fingerprint       string     `json:"host_key_fingerprint"`
+	CreatedAt         time.Time  `json:"created_at"`
+	Endpoint          string     `json:"endpoint"`
+	VPNPort           int        `json:"vpn_port"`
+	VPNState          string     `json:"vpn_state"`
+	VPNError          string     `json:"vpn_error"`
+	Default           bool       `json:"is_default"`
 }
 type Event struct {
+	ServerName string    `json:"server_name,omitempty"`
 	ID         int64     `json:"id"`
 	Actor      string    `json:"actor"`
 	Action     string    `json:"action"`
@@ -188,7 +191,7 @@ func (s *Store) Devices(ctx context.Context, userID string, all bool) ([]Device,
 	return out, rows.Err()
 }
 func audit(ctx context.Context, tx pgx.Tx, actor, action, resource string) error {
-	_, err := tx.Exec(ctx, "INSERT INTO audit_events(actor_id,action,resource_id) VALUES($1,$2,$3)", actor, action, resource)
+	_, err := tx.Exec(ctx, "INSERT INTO audit_events(actor_id,action,resource_id,server_id) VALUES($1,$2,$3,CASE WHEN $2 LIKE 'server.%' OR $2='xray.deploy' THEN $3::text::uuid WHEN $2='profile.issued' THEN (SELECT server_id FROM profiles WHERE id=$3::text::uuid) END)", actor, action, resource)
 	return err
 }
 func (s *Store) CreateDevice(ctx context.Context, u User, name, platform string) (Device, error) {
@@ -221,7 +224,7 @@ func (s *Store) DeleteDevice(ctx context.Context, u User, id string) error {
 		return err
 	}
 	var active bool
-	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM profiles WHERE device_id=$1 AND state<>'revoked') OR EXISTS(SELECT 1 FROM gateways WHERE device_id=$1) OR EXISTS(SELECT 1 FROM xray_devices WHERE device_id=$1)", id).Scan(&active); err != nil {
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM profiles WHERE device_id=$1 AND state NOT IN ('revoked','archived')) OR EXISTS(SELECT 1 FROM gateways WHERE device_id=$1) OR EXISTS(SELECT 1 FROM xray_devices WHERE device_id=$1)", id).Scan(&active); err != nil {
 		return err
 	}
 	if active {
@@ -239,7 +242,7 @@ func (s *Store) DeleteDevice(ctx context.Context, u User, id string) error {
 	return tx.Commit(ctx)
 }
 func (s *Store) Servers(ctx context.Context) ([]Server, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT s.id::text,s.name,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,s.created_at,s.endpoint,s.vpn_port,s.vpn_state,s.vpn_error,s.host_key_policy,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,''),COALESCE(v.default_server_id=s.id,false),s.country_code,s.city,s.egress_mode,s.applied_egress_mode,COALESCE(("+migrationCleanupSQL+"),false) FROM servers s CROSS JOIN vpn_preferences v ORDER BY s.created_at DESC")
+	rows, err := s.Pool.Query(ctx, "SELECT s.id::text,s.display_name,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,s.created_at,s.endpoint,s.vpn_port,s.vpn_state,s.vpn_error,s.host_key_policy,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,''),COALESCE(v.default_server_id=s.id,false),s.country_code,s.city,s.egress_mode,s.applied_egress_mode,COALESCE(("+migrationCleanupSQL+"),false),s.edit_revision,s.deleted_at FROM servers s CROSS JOIN vpn_preferences v ORDER BY s.deleted_at NULLS FIRST,s.created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +250,7 @@ func (s *Store) Servers(ctx context.Context) ([]Server, error) {
 	out := []Server{}
 	for rows.Next() {
 		var v Server
-		if err := rows.Scan(&v.ID, &v.Name, &v.Hostname, &v.SSHPort, &v.SSHUser, &v.Fingerprint, &v.CreatedAt, &v.Endpoint, &v.VPNPort, &v.VPNState, &v.VPNError, &v.HostKeyPolicy, &v.AuthMethod, &v.SSHKeyID, &v.Default, &v.CountryCode, &v.City, &v.EgressMode, &v.AppliedEgressMode, &v.MigrationCleanup); err != nil {
+		if err := rows.Scan(&v.ID, &v.Name, &v.Hostname, &v.SSHPort, &v.SSHUser, &v.Fingerprint, &v.CreatedAt, &v.Endpoint, &v.VPNPort, &v.VPNState, &v.VPNError, &v.HostKeyPolicy, &v.AuthMethod, &v.SSHKeyID, &v.Default, &v.CountryCode, &v.City, &v.EgressMode, &v.AppliedEgressMode, &v.MigrationCleanup, &v.EditRevision, &v.DeletedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -266,7 +269,7 @@ func (s *Store) CreateServer(ctx context.Context, u User, v Server, encryptedKey
 		return v, err
 	}
 	defer tx.Rollback(ctx)
-	err = tx.QueryRow(ctx, `INSERT INTO servers(id,name,hostname,ssh_port,ssh_user,host_key_fingerprint,encrypted_private_key,created_by,ssh_auth_method,ssh_key_id,host_key_policy,country_code,city) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::uuid,$11,$12,$13) RETURNING created_at`, v.ID, v.Name, v.Hostname, v.SSHPort, v.SSHUser, v.Fingerprint, encryptedKey, u.ID, v.AuthMethod, v.SSHKeyID, v.HostKeyPolicy, v.CountryCode, v.City).Scan(&v.CreatedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO servers(id,name,hostname,ssh_port,ssh_user,host_key_fingerprint,encrypted_private_key,created_by,ssh_auth_method,ssh_key_id,host_key_policy,country_code,city) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::uuid,$11,$12,$13) RETURNING created_at,edit_revision`, v.ID, v.Name, v.Hostname, v.SSHPort, v.SSHUser, v.Fingerprint, encryptedKey, u.ID, v.AuthMethod, v.SSHKeyID, v.HostKeyPolicy, v.CountryCode, v.City).Scan(&v.CreatedAt, &v.EditRevision)
 	if err != nil {
 		return v, err
 	}
@@ -276,7 +279,7 @@ func (s *Store) CreateServer(ctx context.Context, u User, v Server, encryptedKey
 	return v, tx.Commit(ctx)
 }
 func (s *Store) Events(ctx context.Context) ([]Event, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT a.id,u.username,a.action,a.resource_id,a.created_at FROM audit_events a JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 100`)
+	rows, err := s.Pool.Query(ctx, `SELECT a.id,u.username,a.action,a.resource_id,a.created_at,COALESCE(s.display_name,'') FROM audit_events a LEFT JOIN servers s ON s.id=a.server_id JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 100`)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +287,7 @@ func (s *Store) Events(ctx context.Context) ([]Event, error) {
 	out := []Event{}
 	for rows.Next() {
 		var v Event
-		if err := rows.Scan(&v.ID, &v.Actor, &v.Action, &v.ResourceID, &v.CreatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.Actor, &v.Action, &v.ResourceID, &v.CreatedAt, &v.ServerName); err != nil {
 			return nil, err
 		}
 		out = append(out, v)

@@ -129,6 +129,17 @@ func (a *App) Handler() http.Handler {
 		jsonResponse(w, 200, v)
 	}))
 	mux.HandleFunc("POST /api/admin/servers", a.auth(true, a.createServer))
+	mux.HandleFunc("PUT /api/admin/servers/{id}", a.auth(true, a.createServer))
+	mux.HandleFunc("DELETE /api/admin/servers/{id}", a.auth(true, func(w http.ResponseWriter, r *http.Request, s store.Session) {
+		id := r.PathValue("id")
+		if !uuidRE.MatchString(id) {
+			apiError(w, 404, "Сервер не найден")
+			return
+		}
+		if !a.vpnError(w, a.db.DeleteServer(r.Context(), s.User, id)) {
+			w.WriteHeader(204)
+		}
+	}))
 	mux.HandleFunc("GET /api/admin/events", a.auth(true, func(w http.ResponseWriter, r *http.Request, s store.Session) {
 		v, err := a.db.Events(r.Context())
 		if err != nil {
@@ -261,6 +272,8 @@ var hostnameRE = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0
 
 func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Session) {
 	var input struct {
+		EditRevision  int64  `json:"edit_revision"`
+		Endpoint      string `json:"endpoint"`
 		RouterIP      string `json:"router_ip"`
 		ClientCIDRs   string `json:"client_cidrs"`
 		CountryCode   string `json:"country_code"`
@@ -277,6 +290,15 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 		SSHKeyID      string `json:"ssh_key_id"`
 	}
 	if !decode(w, r, &input) {
+		return
+	}
+	editing := r.Method == http.MethodPut
+	if editing && !uuidRE.MatchString(r.PathValue("id")) {
+		apiError(w, 404, "Сервер не найден")
+		return
+	}
+	if input.Endpoint != "" && (!editing || (net.ParseIP(input.Endpoint) == nil && !hostnameRE.MatchString(input.Endpoint))) {
+		apiError(w, 400, "Проверьте публичный адрес AmneziaWG")
 		return
 	}
 	isGateway := r.Pattern == "POST /api/admin/gateways"
@@ -308,21 +330,28 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 		input.HostKeyPolicy = "manual"
 	}
 	var err error
-	switch input.HostKeyPolicy {
-	case "manual":
-		fingerprint, e := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(input.Fingerprint, "SHA256:"))
-		if e != nil || len(fingerprint) != 32 || !strings.HasPrefix(input.Fingerprint, "SHA256:") {
-			apiError(w, 400, "Нужен отпечаток ключа хоста в формате SHA256:…")
+	if editing {
+		if input.Fingerprint != "" || input.HostKeyPolicy != "manual" {
+			apiError(w, 400, "При редактировании используется сохранённый отпечаток")
 			return
 		}
-	case "tofu":
-		if input.Fingerprint != "" {
-			apiError(w, 400, "Выберите автоматическое получение или ручной отпечаток")
+	} else {
+		switch input.HostKeyPolicy {
+		case "manual":
+			fingerprint, e := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(input.Fingerprint, "SHA256:"))
+			if e != nil || len(fingerprint) != 32 || !strings.HasPrefix(input.Fingerprint, "SHA256:") {
+				apiError(w, 400, "Нужен отпечаток ключа хоста в формате SHA256:…")
+				return
+			}
+		case "tofu":
+			if input.Fingerprint != "" {
+				apiError(w, 400, "Выберите автоматическое получение или ручной отпечаток")
+				return
+			}
+		default:
+			apiError(w, 400, "Неизвестный способ проверки ключа хоста")
 			return
 		}
-	default:
-		apiError(w, 400, "Неизвестный способ проверки ключа хоста")
-		return
 	}
 	if input.AuthMethod == "" {
 		input.AuthMethod = "key"
@@ -334,13 +363,16 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 			apiError(w, 400, "Выберите один способ SSH-доступа")
 			return
 		}
+		if editing && input.PrivateKey == "" {
+			break
+		}
 		if _, err = ssh.ParsePrivateKey([]byte(input.PrivateKey)); err != nil {
 			apiError(w, 400, "Нужен корректный приватный SSH-ключ без passphrase")
 			return
 		}
 		secret = []byte(input.PrivateKey)
 	case "password":
-		if input.PrivateKey != "" || input.SSHKeyID != "" || len(input.Password) == 0 || len(input.Password) > 4096 {
+		if input.PrivateKey != "" || input.SSHKeyID != "" || (!editing && len(input.Password) == 0) || len(input.Password) > 4096 {
 			apiError(w, 400, "Укажите только пароль SSH (до 4096 байт)")
 			return
 		}
@@ -363,8 +395,13 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 		}
 	}
 	v := store.Server{CountryCode: input.CountryCode, City: input.City, ID: cryptobox.ID(), Name: input.Name, Hostname: input.Hostname, SSHPort: input.SSHPort, SSHUser: input.SSHUser, Fingerprint: input.Fingerprint, AuthMethod: input.AuthMethod, SSHKeyID: input.SSHKeyID, HostKeyPolicy: input.HostKeyPolicy}
+	if editing {
+		v.ID = r.PathValue("id")
+		v.Endpoint = input.Endpoint
+		v.EditRevision = input.EditRevision
+	}
 	var encrypted []byte
-	if secret != nil {
+	if len(secret) > 0 {
 		namespace := "server:"
 		if isGateway {
 			namespace = "gateway:"
@@ -385,7 +422,11 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 		jsonResponse(w, 201, g)
 		return
 	}
-	v, err = a.db.CreateServer(r.Context(), s.User, v, encrypted)
+	if editing {
+		err = a.db.EditServer(r.Context(), s.User, v, encrypted)
+	} else {
+		v, err = a.db.CreateServer(r.Context(), s.User, v, encrypted)
+	}
 	input.PrivateKey = ""
 	input.Password = ""
 	if err != nil {
@@ -394,7 +435,15 @@ func (a *App) createServer(w http.ResponseWriter, r *http.Request, s store.Sessi
 			apiError(w, 400, "Сохранённый SSH-ключ больше не существует")
 			return
 		}
-		a.failure(w, err)
+		if editing && errors.Is(err, store.ErrConflict) {
+			apiError(w, 400, "Укажите пароль или приватный ключ для нового способа входа")
+			return
+		}
+		a.vpnError(w, err)
+		return
+	}
+	if editing {
+		w.WriteHeader(204)
 		return
 	}
 	jsonResponse(w, 201, v)

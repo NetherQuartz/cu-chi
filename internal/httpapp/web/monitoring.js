@@ -1,5 +1,5 @@
 'use strict';
-let countries=[],locationServer='',trafficCatalog=[],trafficSequence=0,trafficUpdated=0,trafficCatalogAt=0;
+let countries=[],trafficCatalog=[],trafficSequence=0,trafficUpdated=0,trafficCatalogAt=0;
 const regionNames = typeof Intl.DisplayNames==='function'?new Intl.DisplayNames(['ru'],{type:'region'}):null;
 const countryName=code=>code?(regionNames?.of(code)||countries.find(c=>c.code===code)?.name||code):'';
 function locationLabel(server){
@@ -10,8 +10,6 @@ function locationLabel(server){
  return el;
 }
 async function loadCountries(){countries=await api('/countries.json');countries.sort((a,b)=>countryName(a.code).localeCompare(countryName(b.code),'ru'));for(const select of $$('.country-select'))for(const c of countries){const option=node('option','',countryName(c.code));option.value=c.code;select.append(option);}}
-function editLocation(server){locationServer=server.id;$('#location-form').elements.country_code.value=server.country_code;$('#location-form').elements.city.value=server.city;openDialog('location');}
-bindForm('location',async form=>{await api(`/api/admin/servers/${locationServer}/location`,{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(form)))});$('#location-dialog').close();await loadServers();notify('Местоположение сохранено');});
 function bytes(n){if(n==null||!Number.isFinite(n))return '—';const u=['Б','КиБ','МиБ','ГиБ','ТиБ'];let i=0;while(n>=1024&&i<4){n/=1024;i++;}return `${new Intl.NumberFormat('ru-RU',{maximumFractionDigits:i?2:0}).format(n)} ${u[i]}`;}
 function dateLabel(v){return v?new Date(v).toLocaleString('ru-RU'):'Ещё не было';}
 function fresh(v){return !!v&&Date.now()-new Date(v).getTime()<180000;}
@@ -31,7 +29,7 @@ function serverMonitoring(server){
  const root=node('section','monitoring');const m=state.monitors.find(x=>x.server_id===server.id),v=m?.latest;
  root.append(node('h4','','Мониторинг VPS'));
  if(!v){root.append(node('p','small muted',m?.error?'Сбор недоступен. Проверьте SSH и доступ к Docker.':'Ожидаем первое измерение после деплоя.'));return root;}
- const stale=!fresh(m.succeeded_at)||!!m.error;
+ const stale=!!server.deleted_at||!fresh(m.succeeded_at)||!!m.error;
  root.append(node('p','small muted',stale?`Нет свежих данных · последнее измерение ${dateLabel(m.succeeded_at)}`:`SSH отвечает · ${v.tunnel?'VPN-процесс работает':'VPN-процесс не отвечает'} · ${dateLabel(m.succeeded_at)}`));
  const metrics=node('div','metric-grid');metrics.append(statCard('↑ Исходящий',stale?'—':bytes(v.send_rate)+'/с',`${bytes(v.tx)} с запуска сетевого интерфейса`),statCard('↓ Входящий',stale?'—':bytes(v.receive_rate)+'/с',`${bytes(v.rx)} с запуска сетевого интерфейса`),statCard('CPU',stale||v.cpu_percent==null?'—':v.cpu_percent.toFixed(1)+'%',`${v.cores} ядер`),statCard('RAM',(100*v.memory_used/v.memory_total).toFixed(1)+'%',`${bytes(v.memory_used)} / ${bytes(v.memory_total)}`),statCard('Диск',(100*v.disk_used/v.disk_total).toFixed(1)+'%',`${bytes(v.disk_used)} / ${bytes(v.disk_total)}`));root.append(metrics);
  root.append(node('p','small muted',`Интерфейс ${v.interface} · включая служебный трафик VPS. Проверка процесса не проверяет выход в интернет или доступность из вашей сети.`));

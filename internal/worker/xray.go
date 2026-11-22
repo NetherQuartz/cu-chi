@@ -32,6 +32,11 @@ func (w *Worker) xrayNext(ctx context.Context) bool {
 	}
 	op, cancel := context.WithTimeout(ctx, 12*time.Minute)
 	defer cancel()
+	guard, lockErr := w.DB.BeginServerUse(ctx, job.ID)
+	if lockErr != nil {
+		return false
+	}
+	defer guard.Rollback(context.Background())
 	sni, e := w.applyXray(op, remote, job)
 	failure := ""
 	if e != nil {
