@@ -72,6 +72,9 @@ func (w *Worker) ExecuteGateway(ctx context.Context, remote GatewayRemote, g sto
 	if err != nil || p.DeviceID != g.DeviceID {
 		return errors.New("gateway profile is no longer ready; issue and apply its current profile")
 	}
+	if p.SignatureRevision != g.SignatureRevision {
+		return errors.New("uplink configuration changed; retry deployment")
+	}
 	raw, err := w.Box.Open(p.EncryptedKeys, "profile:"+p.ID)
 	if err != nil {
 		return errors.New("cannot decrypt gateway profile")
@@ -93,5 +96,5 @@ func (w *Worker) ExecuteGateway(ctx context.Context, remote GatewayRemote, g sto
 	if json.Unmarshal(raw, &keys) != nil || json.Unmarshal(settings, &vpn) != nil || json.Unmarshal(lanRaw, &lan) != nil {
 		return errors.New("invalid stored gateway settings")
 	}
-	return remote.ApplyGateway(ctx, c, deployer.GatewayPayload{ID: g.ID, Image: w.GatewayImage, LANIP: g.Hostname, RouterIP: g.RouterIP, Generation: g.Generation, LAN: lan.ServerConfig, Uplink: vpn.Client(keys, p.Address, t.Endpoint, t.VPNPort)})
+	return remote.ApplyGateway(ctx, c, deployer.GatewayPayload{ID: g.ID, Image: w.GatewayImage, LANIP: g.Hostname, RouterIP: g.RouterIP, Generation: g.Generation, LAN: lan.ServerConfig, Uplink: vpn.Client(keys, p.Address, t.Endpoint, t.VPNPort, t.Signature)})
 }

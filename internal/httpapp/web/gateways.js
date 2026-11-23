@@ -12,6 +12,7 @@ async function loadGateways(){
   top.append(node('h3','',g.name),node('span','badge',labels[g.state]||g.state));card.append(top,node('p','server-address',`${g.ssh_user}@${g.hostname}:${g.ssh_port} · Keenetic ${g.router_ip}`));
   const details=node('details');details.append(node('summary','','Отпечаток SSH-хоста'),node('code','',g.host_key_fingerprint));card.append(details);
   const current=profiles.find(p=>p.device_id===g.device_id&&p.desired),busy=['queued','running'].includes(g.state);
+  if(current?.update_required)card.append(node('p','small','Изменилась маскировка AWG. Нажмите «Применить профиль на VM».'));
   if(g.applied_server_name)card.append(node('p','small muted',`На VM применён профиль сервера «${g.applied_server_name}»`));
   if(current?.state==='archived'){card.append(node('p','small',`${current.server_name} · версия ${current.revision}. Выпустите новый профиль шлюза.`));}
   else if(current){card.append(node('p','small',`${current.server_name} · профиль ${current.revision} · ${current.state==='ready'?'готов на VPS':'применяется на VPS'}`));if(current.server_id!==vpn.server_id)card.append(node('p','form-error','Основной VPS изменился: выпустите новый профиль, затем примените его на VM.'));}

@@ -196,9 +196,12 @@ func (a *App) downloadProfile(w http.ResponseWriter, r *http.Request, session st
 		a.failure(w, errors.New("invalid stored profile"))
 		return
 	}
-	profile := s.Client(k, p.Address, t.Endpoint, t.VPNPort)
+	profile := s.Client(k, p.Address, t.Endpoint, t.VPNPort, t.Signature)
 	if r.Pattern == "GET /api/profiles/{id}/qr" {
-		png, err := qrcode.Encode(profile, qrcode.Medium, 512)
+		png, err := qrcode.Encode(profile, qrcode.Medium, 768)
+		if err != nil {
+			png, err = qrcode.Encode(profile, qrcode.Low, 768)
+		}
 		if err != nil {
 			a.failure(w, errors.New("QR generation failed"))
 			return

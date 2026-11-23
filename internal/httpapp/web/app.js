@@ -5,7 +5,7 @@ const state = { me: null, view: 'devices', devices: [], servers: [], deleting: n
 const platforms = { ios: 'iOS / iPadOS', android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux', gateway: 'Домашний шлюз' };
 const actions = { 'server.egress_warp_queued':'Запрошен выход через WARP', 'server.egress_direct_queued':'Запрошен прямой выход', 'notifications.reminded':'Отправлены напоминания', 'server.maintenance_changed':'Режим обслуживания изменён', 'server.location_changed':'Местоположение изменено', 'ssh_key.created':'SSH-ключ сохранён', 'ssh_key.deleted':'SSH-ключ удалён', 'profile.issued':'Профиль запрошен', 'profile.revocation_requested':'Запрошен отзыв профилей', 'server.check_queued':'Запрошена проверка SSH', 'server.deploy_queued':'Запрошен деплой', 'server.default_changed':'Основной сервер изменён', 'device.created': 'Устройство добавлено', 'device.deleted': 'Устройство удалено', 'server.registered': 'Сервер зарегистрирован' };
 let toastTimer, renderedSSHKeys, editingServer;
-Object.assign(actions, {'server.updated':'Сервер изменён','server.deleted':'Сервер удалён'});
+Object.assign(actions, {'server.signature_changed':'Изменена маскировка AWG','server.updated':'Сервер изменён','server.deleted':'Сервер удалён'});
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 function notify(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4000); }
 async function api(path, options = {}) {
@@ -59,10 +59,10 @@ async function loadDevices() {
   const profiles = state.profiles.filter(p => p.device_id === device.id);
   const current = profiles.find(p => p.desired);
   const applying=current?.state==='pending'&&!current.needs_attention;
-  const meta = node('div', 'device-meta'); meta.append(node('span', '', device.owner), node('span', 'badge', current ? (current.state==='archived'?'Нужен новый профиль':current.needs_attention?'Требуется внимание':current.state === 'ready' ? 'Профиль готов' : 'Применяется на сервере') : 'Профиль не выпущен')); card.append(meta);
+  const meta = node('div', 'device-meta'); meta.append(node('span', '', device.owner), node('span', 'badge', current ? (current.state==='archived'?'Нужен новый профиль':current.needs_attention?'Требуется внимание':current.state === 'ready' ? (current.update_required?'Обновите профиль':'Профиль готов') : 'Применяется на сервере') : 'Профиль не выпущен')); card.append(meta);
   if(applying){const progress=node('div','profile-progress');progress.setAttribute('role','status');const spinner=node('span','spinner');spinner.setAttribute('aria-hidden','true');const text=node('div');text.append(node('strong','','Готовим профиль…'),node('p','small muted','Применяем настройки на сервере. Скачивание и QR появятся автоматически.'));progress.append(spinner,text);card.append(progress);}
   if (current?.needs_attention) card.append(node('p','form-error','Не удалось применить изменения. Администратору нужно проверить сервер.'));
-  if (current) {card.append(node('p', 'small muted', `${current.server_name} · версия ${current.revision}`));const service=state.services.find(s=>s.id===current.server_id);if(service){card.append(locationLabel(service),node('p','small muted',serviceStatus(service)));}if(current.state==='ready')card.append(node('p','small muted',current.server_id!==state.vpn.server_id?'Доступен новый основной сервер — перевыпустите профиль':'Профиль для текущего сервера'));}
+  if (current) {card.append(node('p', 'small muted', `${current.server_name} · версия ${current.revision}`));const service=state.services.find(s=>s.id===current.server_id);if(service){card.append(locationLabel(service),node('p','small muted',serviceStatus(service)));}if(current.state==='ready' && (!current.update_required || current.server_id!==state.vpn.server_id))card.append(node('p','small muted',current.server_id!==state.vpn.server_id?'Доступен новый основной сервер — перевыпустите профиль':'Профиль для текущего сервера'));}
   const historical=profiles.filter(p=>p!==current && ['archived','revoked'].includes(p.state));
   if(historical.length){
    const history=node('details','profile-cleanup');
@@ -76,6 +76,21 @@ async function loadDevices() {
   if(revoking.length){const details=node('details','profile-cleanup');details.dataset.deviceId=device.id;details.open=expandedCleanup.has(device.id);details.append(node('summary','','Старые ключи: ожидается подтверждение отзыва'),node('p','small muted',`Серверы: ${[...new Set(revoking.map(p=>p.server_name))].join(', ')}. Пока сервер не подтвердит удаление, старые ключи считаются неотозванными.`));if(current?.state==='ready')details.append(node('p','small muted','Новый профиль готов: его можно скачать и импортировать, не дожидаясь отзыва старого.'));card.append(details);}
   const controls = node('div','card-actions');
   if (current?.state === 'ready') {
+   if(current.update_required){
+    if(device.platform==='gateway'){
+     card.append(node('p','small','Настройки AWG обновились. Примените профиль на VM в разделе «Шлюзы».'));
+    }else{
+     card.append(node('p','small',`Настройки AWG обновились (редакция ${current.signature_revision}). Скачайте .conf или откройте QR, замените профиль в приложении и подтвердите импорт.`));
+     const confirmImport=node('button','button secondary','Я обновил профиль');
+     confirmImport.addEventListener('click',async()=>{
+      try{
+       await api(`/api/profiles/${current.id}/confirm-import`,{method:'POST',body:JSON.stringify({revision:current.signature_revision})});
+       await loadDevices();
+      }catch(error){notify(error.message);}
+     });
+     controls.append(confirmImport);
+    }
+   }
    const download=node('a','button secondary','Скачать .conf'); download.href=`/api/profiles/${current.id}/download`; controls.append(download);
    const qr=node('button','button secondary','QR'); qr.addEventListener('click',()=>{ $('#profile-qr').src=`/api/profiles/${current.id}/qr`; $('#qr-dialog').showModal(); }); controls.append(qr);
   }
@@ -127,7 +142,9 @@ async function loadServers() {
   edit.addEventListener('click',()=>openServerForm(server));
   const remove=node('button','button secondary','Удалить сервер');
   remove.addEventListener('click',()=>deleteServer(server));
-  controls.append(edit,maintenanceButton(server),remove);card.append(locationLabel(server),node('p','small',healthLabel(server.id)),node('p','small muted','Проверка с VPS: туннель, DNS и HTTPS. Доступ из сети устройства не проверяется.'),controls,serverMonitoring(server));container.append(card);
+  const signature=node('button','button secondary','Маскировка AWG');
+  signature.addEventListener('click',()=>openSignature(server));
+  controls.append(edit,signature,maintenanceButton(server),remove);card.append(locationLabel(server),node('p','small',healthLabel(server.id)),node('p','small muted','Проверка с VPS: туннель, DNS и HTTPS. Доступ из сети устройства не проверяется.'),controls,serverMonitoring(server));container.append(card);
  }
 }
 async function loadEvents() {
@@ -168,6 +185,31 @@ $('#empty-add-device').addEventListener('click', () => openDialog('device')); $(
 $('#logout').addEventListener('click', async () => { try { await api('/api/logout', { method: 'POST' }); state.me = null; location.reload(); } catch (error) { notify(error.message); } });
 $('#dev-login').addEventListener('click', async event => { event.currentTarget.disabled = true; try { await api('/auth/dev', { method: 'POST' }); await start(); } catch (error) { $('#login-error').textContent = error.message; } finally { $('#dev-login').disabled = false; } });
 bindForm('device', async form => { await api('/api/devices', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form))) }); $('#device-dialog').close(); form.reset(); await loadDevices(); notify('Устройство добавлено'); });
+let signatureServer;
+function signatureFields(){
+ const form=$('#signature-form');
+ const custom=form.elements.mode.value==='custom';
+ $('#signature-custom').hidden=!custom;
+ form.elements.custom.disabled=!custom;
+ form.elements.custom.required=custom;
+}
+$('#signature-form').elements.mode.addEventListener('change',signatureFields);
+function openSignature(server){
+ signatureServer=server;
+ const form=$('#signature-form');
+ form.elements.mode.value=server.signature_mode;
+ form.elements.custom.value=server.signature_mode==='custom'?server.awg_signature:'';
+ signatureFields();
+ openDialog('signature');
+}
+bindForm('signature',async form=>{
+ const data=Object.fromEntries(new FormData(form));
+ data.revision=signatureServer.signature_revision;
+ await api(`/api/admin/servers/${signatureServer.id}/signature`,{method:'PUT',body:JSON.stringify(data)});
+ await loadServers();
+ $('#signature-dialog').close();
+ notify('Настройки AWG сохранены');
+});
 function openServerForm(server=null){
  editingServer=server;
  const form=$('#server-form'), fields=form.elements;

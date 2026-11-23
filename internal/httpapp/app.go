@@ -73,6 +73,7 @@ func New(ctx context.Context, cfg config.Config, db *store.Store) (*App, error) 
 func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	a.vpnRoutes(mux)
+	a.signatureRoutes(mux)
 	a.xrayRoutes(mux)
 	a.gatewayRoutes(mux)
 	a.sshKeyRoutes(mux)

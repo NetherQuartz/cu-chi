@@ -85,7 +85,7 @@ func TestGatewayPacketsAndFailClosed(t *testing.T) {
 	}
 	write("lan/wg0.conf", lan.ServerConfig)
 	write("lan/router-ip", ip(client))
-	write("uplink.conf", settings.Client(keys, "10.66.0.2", ip(server), 51820))
+	write("uplink.conf", settings.Client(keys, "10.66.0.2", ip(server), 51820, awg.DefaultSignature()))
 	run(append(append([]string{}, base...), "--name", bridge, "--sysctl", "net.ipv4.ip_forward=1", "--sysctl", "net.ipv4.conf.all.rp_filter=0", "--sysctl", "net.ipv4.conf.default.rp_filter=0", "--sysctl", "net.ipv6.conf.all.disable_ipv6=1", "-v", dir+":/config:ro", image)...)
 	waitReady(bridge, "/run/cuchi-gateway-ready")
 	routerConfig := strings.Replace(lan.RouterConfig, "192.168.50.10:51820", ip(bridge)+":51820", 1)
@@ -154,7 +154,7 @@ ip route add 1.1.1.1/32 dev wg0`, "--", target)
 	next := awg.NewKeys()
 	write("awg0.conf", settings.Server([]awg.Peer{{Public: next.Public, PSK: next.PSK, Address: "10.66.0.3"}}))
 	run("exec", server, "awg", "syncconf", "awg0", "/config/awg0.conf")
-	write("uplink.conf", settings.Client(next, "10.66.0.3", ip(server), 51820))
+	write("uplink.conf", settings.Client(next, "10.66.0.3", ip(server), 51820, awg.DefaultSignature()))
 	run("restart", bridge)
 	waitReady(bridge, "/run/cuchi-gateway-ready")
 	if publicBefore != run("exec", bridge, "wg", "show", "wg0", "public-key") {

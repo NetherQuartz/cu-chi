@@ -82,8 +82,12 @@ func (s Settings) Server(peers []Peer) string {
 	}
 	return b.String()
 }
-func (s Settings) Client(k Keys, address, endpoint string, port int) string {
-	return fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = %s/32\nDNS = 1.1.1.1, 1.0.0.1\nMTU = 1280\nJc = 4\nJmin = 40\nJmax = 100\n%s\n[Peer]\nPublicKey = %s\nPresharedKey = %s\nEndpoint = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 22-30\n", k.Private, address, s.Parameters(), s.Keys.Public, k.PSK, net.JoinHostPort(endpoint, fmt.Sprint(port)))
+func (s Settings) Client(k Keys, address, endpoint string, port int, signature string) string {
+	parameters := s.Parameters()
+	if signature != "" {
+		parameters += "I1 = " + signature + "\n"
+	}
+	return fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = %s/32\nDNS = 1.1.1.1, 1.0.0.1\nMTU = 1280\nJc = 4\nJmin = 40\nJmax = 100\n%s\n[Peer]\nPublicKey = %s\nPresharedKey = %s\nEndpoint = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 22-30\n", k.Private, address, parameters, s.Keys.Public, k.PSK, net.JoinHostPort(endpoint, fmt.Sprint(port)))
 }
 
 // Probe is an awg setconf file: routing is installed by the probe container.

@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"github.com/NetherQuartz/cu-chi/internal/awg"
 	"sort"
 	"time"
 
@@ -37,6 +38,9 @@ type Device struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type Server struct {
+	Signature         string     `json:"awg_signature,omitempty"`
+	SignatureRevision int64      `json:"signature_revision"`
+	SignatureMode     string     `json:"signature_mode,omitempty"`
 	EditRevision      int64      `json:"edit_revision"`
 	DeletedAt         *time.Time `json:"deleted_at,omitempty"`
 	EgressMode        string     `json:"egress_mode"`
@@ -242,7 +246,7 @@ func (s *Store) DeleteDevice(ctx context.Context, u User, id string) error {
 	return tx.Commit(ctx)
 }
 func (s *Store) Servers(ctx context.Context) ([]Server, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT s.id::text,s.display_name,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,s.created_at,s.endpoint,s.vpn_port,s.vpn_state,s.vpn_error,s.host_key_policy,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,''),COALESCE(v.default_server_id=s.id,false),s.country_code,s.city,s.egress_mode,s.applied_egress_mode,COALESCE(("+migrationCleanupSQL+"),false),s.edit_revision,s.deleted_at FROM servers s CROSS JOIN vpn_preferences v ORDER BY s.deleted_at NULLS FIRST,s.created_at DESC")
+	rows, err := s.Pool.Query(ctx, "SELECT s.id::text,s.display_name,s.hostname,s.ssh_port,s.ssh_user,s.host_key_fingerprint,s.created_at,s.endpoint,s.vpn_port,s.vpn_state,s.vpn_error,s.host_key_policy,s.ssh_auth_method,COALESCE(s.ssh_key_id::text,''),COALESCE(v.default_server_id=s.id,false),s.country_code,s.city,s.egress_mode,s.applied_egress_mode,COALESCE(("+migrationCleanupSQL+"),false),s.edit_revision,s.deleted_at,s.awg_signature,s.signature_revision FROM servers s CROSS JOIN vpn_preferences v ORDER BY s.deleted_at NULLS FIRST,s.created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -250,9 +254,10 @@ func (s *Store) Servers(ctx context.Context) ([]Server, error) {
 	out := []Server{}
 	for rows.Next() {
 		var v Server
-		if err := rows.Scan(&v.ID, &v.Name, &v.Hostname, &v.SSHPort, &v.SSHUser, &v.Fingerprint, &v.CreatedAt, &v.Endpoint, &v.VPNPort, &v.VPNState, &v.VPNError, &v.HostKeyPolicy, &v.AuthMethod, &v.SSHKeyID, &v.Default, &v.CountryCode, &v.City, &v.EgressMode, &v.AppliedEgressMode, &v.MigrationCleanup, &v.EditRevision, &v.DeletedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.Name, &v.Hostname, &v.SSHPort, &v.SSHUser, &v.Fingerprint, &v.CreatedAt, &v.Endpoint, &v.VPNPort, &v.VPNState, &v.VPNError, &v.HostKeyPolicy, &v.AuthMethod, &v.SSHKeyID, &v.Default, &v.CountryCode, &v.City, &v.EgressMode, &v.AppliedEgressMode, &v.MigrationCleanup, &v.EditRevision, &v.DeletedAt, &v.Signature, &v.SignatureRevision); err != nil {
 			return nil, err
 		}
+		v.SignatureMode = signatureMode(v.Signature)
 		out = append(out, v)
 	}
 	return out, rows.Err()
@@ -269,7 +274,9 @@ func (s *Store) CreateServer(ctx context.Context, u User, v Server, encryptedKey
 		return v, err
 	}
 	defer tx.Rollback(ctx)
-	err = tx.QueryRow(ctx, `INSERT INTO servers(id,name,hostname,ssh_port,ssh_user,host_key_fingerprint,encrypted_private_key,created_by,ssh_auth_method,ssh_key_id,host_key_policy,country_code,city) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::uuid,$11,$12,$13) RETURNING created_at,edit_revision`, v.ID, v.Name, v.Hostname, v.SSHPort, v.SSHUser, v.Fingerprint, encryptedKey, u.ID, v.AuthMethod, v.SSHKeyID, v.HostKeyPolicy, v.CountryCode, v.City).Scan(&v.CreatedAt, &v.EditRevision)
+	v.Signature = awg.DefaultSignature()
+	v.SignatureMode = signatureMode(v.Signature)
+	err = tx.QueryRow(ctx, `INSERT INTO servers(id,name,hostname,ssh_port,ssh_user,host_key_fingerprint,encrypted_private_key,created_by,ssh_auth_method,ssh_key_id,host_key_policy,country_code,city,awg_signature) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::uuid,$11,$12,$13,$14) RETURNING created_at,edit_revision,signature_revision`, v.ID, v.Name, v.Hostname, v.SSHPort, v.SSHUser, v.Fingerprint, encryptedKey, u.ID, v.AuthMethod, v.SSHKeyID, v.HostKeyPolicy, v.CountryCode, v.City, v.Signature).Scan(&v.CreatedAt, &v.EditRevision, &v.SignatureRevision)
 	if err != nil {
 		return v, err
 	}

@@ -7,7 +7,7 @@ import (
 )
 
 func TestUplinkDialectAndNoHooks(t *testing.T) {
-	profile := awg.NewSettings().Client(awg.NewKeys(), "10.66.0.2", "vpn.example", 51820)
+	profile := awg.NewSettings().Client(awg.NewKeys(), "10.66.0.2", "vpn.example", 51820, "")
 	u, err := ParseUplink(profile)
 	if err != nil {
 		t.Fatal(err)

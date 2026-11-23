@@ -30,10 +30,10 @@ type Gateway struct {
 	EncryptedLAN        []byte     `json:"-"`
 }
 
-const gatewaySelect = `SELECT g.id::text,g.device_id::text,g.name,g.hostname,g.router_ip,g.client_cidrs,g.ssh_port,g.ssh_user,g.host_key_fingerprint,g.host_key_policy,g.ssh_auth_method,COALESCE(g.ssh_key_id::text,''),g.created_at,g.state,g.error,g.kind,g.attempts,COALESCE(g.desired_profile_id::text,''),COALESCE(g.applied_profile_id::text,''),g.applied_at,COALESCE((SELECT p.id::text FROM profiles p WHERE p.device_id=g.device_id AND p.desired AND p.state='ready'),''),g.generation,COALESCE(g.run_token::text,''),CASE WHEN g.ssh_auth_method='saved_key' THEN k.encrypted_private_key ELSE g.encrypted_credential END,g.encrypted_lan,COALESCE((SELECT s.display_name FROM profiles p JOIN servers s ON s.id=p.server_id WHERE p.id=g.applied_profile_id),'') FROM gateways g LEFT JOIN ssh_keys k ON k.id=g.ssh_key_id `
+const gatewaySelect = `SELECT g.id::text,g.device_id::text,g.name,g.hostname,g.router_ip,g.client_cidrs,g.ssh_port,g.ssh_user,g.host_key_fingerprint,g.host_key_policy,g.ssh_auth_method,COALESCE(g.ssh_key_id::text,''),g.created_at,g.state,g.error,g.kind,g.attempts,COALESCE(g.desired_profile_id::text,''),COALESCE(g.applied_profile_id::text,''),g.applied_at,COALESCE((SELECT p.id::text FROM profiles p WHERE p.device_id=g.device_id AND p.desired AND p.state='ready'),''),g.generation,COALESCE(g.run_token::text,''),CASE WHEN g.ssh_auth_method='saved_key' THEN k.encrypted_private_key ELSE g.encrypted_credential END,g.encrypted_lan,COALESCE((SELECT s.display_name FROM profiles p JOIN servers s ON s.id=p.server_id WHERE p.id=g.applied_profile_id),''),COALESCE((SELECT s.signature_revision FROM profiles p JOIN servers s ON s.id=p.server_id WHERE p.id=g.desired_profile_id),0) FROM gateways g LEFT JOIN ssh_keys k ON k.id=g.ssh_key_id `
 
 func scanGateway(row pgx.Row) (g Gateway, err error) {
-	err = row.Scan(&g.ID, &g.DeviceID, &g.Name, &g.Hostname, &g.RouterIP, &g.ClientCIDRs, &g.SSHPort, &g.SSHUser, &g.Fingerprint, &g.HostKeyPolicy, &g.AuthMethod, &g.SSHKeyID, &g.CreatedAt, &g.State, &g.Error, &g.Kind, &g.Attempts, &g.DesiredProfileID, &g.AppliedProfileID, &g.AppliedAt, &g.CurrentProfileID, &g.Generation, &g.RunToken, &g.EncryptedCredential, &g.EncryptedLAN, &g.AppliedServerName)
+	err = row.Scan(&g.ID, &g.DeviceID, &g.Name, &g.Hostname, &g.RouterIP, &g.ClientCIDRs, &g.SSHPort, &g.SSHUser, &g.Fingerprint, &g.HostKeyPolicy, &g.AuthMethod, &g.SSHKeyID, &g.CreatedAt, &g.State, &g.Error, &g.Kind, &g.Attempts, &g.DesiredProfileID, &g.AppliedProfileID, &g.AppliedAt, &g.CurrentProfileID, &g.Generation, &g.RunToken, &g.EncryptedCredential, &g.EncryptedLAN, &g.AppliedServerName, &g.SignatureRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotFound
 	}
@@ -168,6 +168,11 @@ func (s *Store) FinishGateway(ctx context.Context, g Gateway, failure string) er
 	result, err := tx.Exec(ctx, `UPDATE gateways SET state=$4,error=$5,run_after=now()+interval '30 seconds',applied_profile_id=CASE WHEN $4='ready' THEN desired_profile_id ELSE applied_profile_id END,applied_at=CASE WHEN $4='ready' THEN now() ELSE applied_at END WHERE id=$1 AND generation=$2 AND run_token=$3 AND state='running'`, g.ID, g.Generation, g.RunToken, state, failure)
 	if err != nil {
 		return err
+	}
+	if result.RowsAffected() == 1 && state == "ready" {
+		if _, err = tx.Exec(ctx, `UPDATE profiles SET signature_revision=GREATEST(signature_revision,$2) WHERE id=$1`, g.DesiredProfileID, g.SignatureRevision); err != nil {
+			return err
+		}
 	}
 	if result.RowsAffected() == 1 && state == "failed" {
 		if _, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity,gateway_id) SELECT id,$1,'job_failed','warning',$2 FROM users WHERE role='admin' ON CONFLICT DO NOTHING`, fmt.Sprintf("gateway:%s:%d", g.ID, g.Generation), g.ID); err != nil {

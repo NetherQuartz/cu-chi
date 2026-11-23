@@ -69,5 +69,5 @@ func profileMetadata(p store.Profile) string {
 			return r
 		}, s)
 	}
-	return fmt.Sprintf("# Củ Chi\n# User: %s\n# Server: %s\n# Device: %s\n# Revision: %d\n# Issued: %s\n\n", clean(p.OwnerName), clean(p.ServerName), clean(p.DeviceName), p.Revision, p.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"))
+	return fmt.Sprintf("# Củ Chi\n# User: %s\n# Server: %s\n# Device: %s\n# Revision: %d\n# AWG settings: %d\n# Issued: %s\n\n", clean(p.OwnerName), clean(p.ServerName), clean(p.DeviceName), p.Revision, p.SignatureRevision, p.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"))
 }

@@ -152,3 +152,5 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+The bundled AWG I1 configuration value in `internal/awg/amnezia-i1-v1.txt` comes from the public Amnezia self-hosted troubleshooting guide, section «Смена сигнатуры». It is the example configuration published for use with AmneziaWG 3.1. [Amnezia documentation](https://docs.amnezia.org/ru/troubleshooting/self-hosted-amneziawg-not-working/)

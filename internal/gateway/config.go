@@ -100,6 +100,13 @@ func ParseUplink(data string) (Uplink, error) {
 		}
 		fmt.Fprintf(&b, "%s = %s\n", key, value)
 	}
+	if signature, ok := iface["I1"]; ok {
+		if !awg.ValidSignature(signature) {
+			return fail()
+		}
+		allowed["I1"] = true
+		fmt.Fprintf(&b, "I1 = %s\n", signature)
+	}
 	for key := range iface {
 		if !allowed[key] {
 			return fail()

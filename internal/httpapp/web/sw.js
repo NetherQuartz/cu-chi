@@ -6,7 +6,7 @@ self.addEventListener('push',event=>{
  event.waitUntil(self.registration.showNotification(typeof data.title==='string'?data.title.slice(0,100):'Củ Chi',{
   body:typeof data.body==='string'?data.body.slice(0,400):'Откройте личный кабинет.',
   // Android masks the badge to its alpha silhouette; an opaque app tile becomes a square.
-  icon:'/icon-192.png',badge:'/badge-96.png',tag:'cuchi-'+id,data:{id,view:data.kind==='xray_available'?'devices':'notifications'},
+  icon:'/icon-192.png',badge:'/badge-96.png',tag:'cuchi-'+id,data:{id,view:['xray_available','awg_profile_update'].includes(data.kind)?'devices':'notifications'},
  }));
 });
 self.addEventListener('notificationclick',event=>{

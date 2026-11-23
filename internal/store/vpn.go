@@ -13,20 +13,22 @@ import (
 var ErrConflict = errors.New("operation conflicts with current VPN state")
 
 type Profile struct {
-	OwnerName      string    `json:"-"`
-	DeviceName     string    `json:"-"`
-	NeedsAttention bool      `json:"needs_attention"`
-	ID             string    `json:"id"`
-	DeviceID       string    `json:"device_id"`
-	ServerID       string    `json:"server_id"`
-	ServerName     string    `json:"server_name"`
-	Revision       int       `json:"revision"`
-	Address        string    `json:"address"`
-	PublicKey      string    `json:"public_key"`
-	State          string    `json:"state"`
-	Desired        bool      `json:"desired"`
-	CreatedAt      time.Time `json:"created_at"`
-	EncryptedKeys  []byte    `json:"-"`
+	SignatureRevision int64     `json:"signature_revision"`
+	UpdateRequired    bool      `json:"update_required"`
+	OwnerName         string    `json:"-"`
+	DeviceName        string    `json:"-"`
+	NeedsAttention    bool      `json:"needs_attention"`
+	ID                string    `json:"id"`
+	DeviceID          string    `json:"device_id"`
+	ServerID          string    `json:"server_id"`
+	ServerName        string    `json:"server_name"`
+	Revision          int       `json:"revision"`
+	Address           string    `json:"address"`
+	PublicKey         string    `json:"public_key"`
+	State             string    `json:"state"`
+	Desired           bool      `json:"desired"`
+	CreatedAt         time.Time `json:"created_at"`
+	EncryptedKeys     []byte    `json:"-"`
 }
 type Job struct {
 	ServerName string    `json:"server_name,omitempty"`
@@ -166,7 +168,7 @@ func (s *Store) Issue(ctx context.Context, u User, p Profile) (Profile, error) {
 		return p, err
 	}
 	var next int
-	err = tx.QueryRow(ctx, `SELECT s.id::text,s.next_address FROM servers s JOIN vpn_preferences v ON v.default_server_id=s.id WHERE s.vpn_state='ready' FOR UPDATE OF s`).Scan(&p.ServerID, &next)
+	err = tx.QueryRow(ctx, `SELECT s.id::text,s.next_address,s.signature_revision FROM servers s JOIN vpn_preferences v ON v.default_server_id=s.id WHERE s.vpn_state='ready' FOR UPDATE OF s`).Scan(&p.ServerID, &next, &p.SignatureRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrConflict
 	}
@@ -211,7 +213,7 @@ func (s *Store) Issue(ctx context.Context, u User, p Profile) (Profile, error) {
 	if err != nil {
 		return p, err
 	}
-	err = tx.QueryRow(ctx, `INSERT INTO profiles(id,device_id,server_id,revision,address,public_key,encrypted_keys) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING created_at`, p.ID, deviceID, p.ServerID, p.Revision, p.Address, p.PublicKey, p.EncryptedKeys).Scan(&p.CreatedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO profiles(id,device_id,server_id,revision,address,public_key,encrypted_keys,signature_revision) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING created_at`, p.ID, deviceID, p.ServerID, p.Revision, p.Address, p.PublicKey, p.EncryptedKeys, p.SignatureRevision).Scan(&p.CreatedAt)
 	if err != nil {
 		return p, err
 	}
@@ -282,7 +284,7 @@ func (s *Store) Revoke(ctx context.Context, u User, deviceID string) error {
 	return tx.Commit(ctx)
 }
 func (s *Store) Profiles(ctx context.Context, u User) ([]Profile, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT p.id::text,p.device_id::text,p.server_id::text,s.display_name,p.revision,p.address,p.public_key,p.state,p.desired,p.created_at,(p.desired AND p.state='pending' AND s.vpn_error<>'') FROM profiles p JOIN devices d ON d.id=p.device_id JOIN servers s ON s.id=p.server_id WHERE (d.user_id=$1 OR $2) AND (p.state<>'revoked' OR s.deleted_at IS NOT NULL) ORDER BY p.revision DESC`, u.ID, u.Role == "admin")
+	rows, err := s.Pool.Query(ctx, `SELECT p.id::text,p.device_id::text,p.server_id::text,s.display_name,p.revision,p.address,p.public_key,p.state,p.desired,p.created_at,(p.desired AND p.state='pending' AND s.vpn_error<>''),s.signature_revision,(p.desired AND s.deleted_at IS NULL AND p.signature_revision<s.signature_revision) FROM profiles p JOIN devices d ON d.id=p.device_id JOIN servers s ON s.id=p.server_id WHERE (d.user_id=$1 OR $2) AND (p.state<>'revoked' OR s.deleted_at IS NOT NULL) ORDER BY p.revision DESC`, u.ID, u.Role == "admin")
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +292,7 @@ func (s *Store) Profiles(ctx context.Context, u User) ([]Profile, error) {
 	out := []Profile{}
 	for rows.Next() {
 		var p Profile
-		if err = rows.Scan(&p.ID, &p.DeviceID, &p.ServerID, &p.ServerName, &p.Revision, &p.Address, &p.PublicKey, &p.State, &p.Desired, &p.CreatedAt, &p.NeedsAttention); err != nil {
+		if err = rows.Scan(&p.ID, &p.DeviceID, &p.ServerID, &p.ServerName, &p.Revision, &p.Address, &p.PublicKey, &p.State, &p.Desired, &p.CreatedAt, &p.NeedsAttention, &p.SignatureRevision, &p.UpdateRequired); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -300,7 +302,7 @@ func (s *Store) Profiles(ctx context.Context, u User) ([]Profile, error) {
 func (s *Store) Download(ctx context.Context, u User, id string) (Profile, Target, error) {
 	var p Profile
 	var t Target
-	err := s.Pool.QueryRow(ctx, `SELECT p.id::text,p.device_id::text,p.server_id::text,p.address,p.encrypted_keys,s.endpoint,s.vpn_port,s.encrypted_vpn_settings,u.username,d.name,s.name,p.revision,p.created_at FROM profiles p JOIN devices d ON d.id=p.device_id JOIN users u ON u.id=d.user_id JOIN servers s ON s.id=p.server_id WHERE p.id=$1 AND (d.user_id=$2 OR $3) AND p.state='ready' AND p.desired`, id, u.ID, u.Role == "admin").Scan(&p.ID, &p.DeviceID, &p.ServerID, &p.Address, &p.EncryptedKeys, &t.Endpoint, &t.VPNPort, &t.EncryptedSettings, &p.OwnerName, &p.DeviceName, &p.ServerName, &p.Revision, &p.CreatedAt)
+	err := s.Pool.QueryRow(ctx, `SELECT p.id::text,p.device_id::text,p.server_id::text,p.address,p.encrypted_keys,s.endpoint,s.vpn_port,s.encrypted_vpn_settings,u.username,d.name,s.name,p.revision,p.created_at,s.awg_signature,s.signature_revision FROM profiles p JOIN devices d ON d.id=p.device_id JOIN users u ON u.id=d.user_id JOIN servers s ON s.id=p.server_id WHERE p.id=$1 AND (d.user_id=$2 OR $3) AND p.state='ready' AND p.desired`, id, u.ID, u.Role == "admin").Scan(&p.ID, &p.DeviceID, &p.ServerID, &p.Address, &p.EncryptedKeys, &t.Endpoint, &t.VPNPort, &t.EncryptedSettings, &p.OwnerName, &p.DeviceName, &p.ServerName, &p.Revision, &p.CreatedAt, &t.Signature, &p.SignatureRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotFound
 	}

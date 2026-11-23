@@ -28,7 +28,7 @@ ENTRYPOINT ["/usr/local/bin/cuchi-awg"]
 FROM golang:1.26.11-alpine@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab AS gateway-build
 WORKDIR /src
 COPY go.mod go.sum ./
-COPY internal/awg/config.go ./internal/awg/config.go
+COPY internal/awg/config.go internal/awg/signature.go internal/awg/amnezia-i1-v1.txt ./internal/awg/
 COPY internal/gateway/config.go ./internal/gateway/config.go
 COPY cmd/cuchi-gateway ./cmd/cuchi-gateway
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /cuchi-gateway-config ./cmd/cuchi-gateway

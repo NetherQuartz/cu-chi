@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -25,7 +26,7 @@ func (f *fakeGateway) ApplyGateway(_ context.Context, c deployer.Credentials, p 
 	return nil
 }
 func TestGatewayLifecycleAndIsolation(t *testing.T) {
-	a, admin, _, worker, _ := vpnSetup(t)
+	a, admin, server, worker, _ := vpnSetup(t)
 	ctx := context.Background()
 	normal := account(t, a, "user")
 	a.cfg.GatewayImage = "ghcr.io/netherquartz/cu-chi-gateway@sha256:" + strings.Repeat("b", 64)
@@ -83,6 +84,49 @@ func TestGatewayLifecycleAndIsolation(t *testing.T) {
 	saved, err := a.db.Gateway(ctx, g.ID)
 	if err != nil || saved.State != "ready" || saved.AppliedProfileID != p.ID {
 		t.Fatalf("gateway not ready: %v", err)
+	}
+	// A signature change during application must leave the gateway update pending.
+	update := func(mode string, revision int) {
+		t.Helper()
+		requireStatus(t, request(a, "PUT", "/api/admin/servers/"+server+"/signature", admin, fmt.Sprintf(`{"mode":"%s","revision":%d}`, mode, revision)), 204)
+	}
+	update("off", 1)
+	requireStatus(t, request(a, "POST", path+"/deploy", admin, ""), 202)
+	masked, err := a.db.ClaimGateway(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = worker.ExecuteGateway(ctx, remote, masked); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(remote.payload.Uplink, "I1 =") {
+		t.Fatal("old signature on gateway")
+	}
+	update("amnezia", 2)
+	if err = a.db.FinishGateway(ctx, masked, ""); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := a.db.Profiles(ctx, admin.user)
+	if err != nil || len(rows) != 1 || !rows[0].UpdateRequired {
+		t.Fatal("stale gateway result cleared update", err)
+	}
+	requireStatus(t, request(a, "POST", path+"/deploy", admin, ""), 202)
+	masked, err = a.db.ClaimGateway(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = worker.ExecuteGateway(ctx, remote, masked); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(remote.payload.Uplink, "I1 =") {
+		t.Fatal("missing gateway signature")
+	}
+	if err = a.db.FinishGateway(ctx, masked, ""); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = a.db.Profiles(ctx, admin.user)
+	if err != nil || len(rows) != 1 || rows[0].UpdateRequired {
+		t.Fatal("gateway apply did not confirm update", err)
 	}
 	// A new profile does not change the stable router identity or silently apply itself.
 	p2 := issueFor(t, a, admin, g.DeviceID)

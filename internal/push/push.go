@@ -102,7 +102,7 @@ func pushLabel(value string, limit int) string {
 	return string(runes)
 }
 func Payload(id, kind, severity string, details ...Context) []byte {
-	body := map[string]string{"outage": "Обнаружена проблема с VPN. Подробности в личном кабинете.", "management": "Не удаётся проверить сервер. Откройте панель администратора.", "recovery": "Проверка VPN снова проходит успешно.", "reminder": "Доступен новый основной сервер. Перевыпустите и импортируйте профили устройств.", "test": "Уведомления Củ Chi подключены.", "job_failed": "Изменение VPN не удалось применить. Откройте панель администратора."}[kind]
+	body := map[string]string{"outage": "Обнаружена проблема с VPN. Подробности в личном кабинете.", "management": "Не удаётся проверить сервер. Откройте панель администратора.", "recovery": "Проверка VPN снова проходит успешно.", "awg_profile_update": "Изменились настройки AmneziaWG. Обновите профиль в личном кабинете.", "reminder": "Доступен новый основной сервер. Перевыпустите и импортируйте профили устройств.", "test": "Уведомления Củ Chi подключены.", "job_failed": "Изменение VPN не удалось применить. Откройте панель администратора."}[kind]
 	if len(details) > 0 && (kind == "job_failed" || kind == "management") {
 		if server := pushLabel(details[0].ServerName, 60); server != "" {
 			body = "Сервер: " + server + ". " + body

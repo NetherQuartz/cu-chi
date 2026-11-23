@@ -71,6 +71,10 @@ func TestSSHMigrationPreservesExistingCredential(t *testing.T) {
 	if err = db.migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
+	servers, err := db.Servers(ctx)
+	if err != nil || len(servers) != 1 || servers[0].SignatureMode != "off" || servers[0].SignatureRevision != 1 {
+		t.Fatal("migration changed existing AWG signature", err)
+	}
 	target, err := db.Target(ctx, id)
 	if err != nil {
 		t.Fatal(err)
