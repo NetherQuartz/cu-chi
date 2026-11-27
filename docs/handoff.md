@@ -328,3 +328,9 @@ In Servers → Маскировка AWG, select the Amnezia QUIC-style I1 templa
 The preset is pinned in internal/awg/amnezia-i1-v1.txt from the official Amnezia troubleshooting guide. The portal makes no runtime request to fetch a signature. Custom templates accept b, r, rc, rd and t tags with size bounds for QR and UDP. Live effectiveness against ISP blocking and delivery on the owner's devices require field observation after rollout.
 
 Local verification passed with PostgreSQL 17, Go vet, the full race suite and Chromium at 390px and 1280px. Tests covered stable keys, custom/default/off settings, migration, stale revisions, ownership, push audience and deduplication, and gateway confirmation across a concurrent signature change. No production settings were changed.
+
+## Personal device view and inbox (2026-11-27)
+
+The administrator Devices view opens with «Только мои» checked. The list, device and platform totals, and navigation badge follow the filter. A switch to all devices survives tab navigation and polling within the open page. A page reload starts with personal devices again. «Прочитать все» marks the signed-in user's entire visible inbox as read, including records older than the 100-item display window. History is retained and the unread badge counts the full inbox.
+
+Local PostgreSQL 17 integration and race tests, vet, browser session tests, and Chromium interaction at 390px and 1280px passed. No schema or VPN deployment changes are required.

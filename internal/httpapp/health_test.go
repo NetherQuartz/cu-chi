@@ -144,3 +144,39 @@ func TestOutagePushPreferencesAndRecoveryEligibility(t *testing.T) {
 		t.Fatal("recovery pushed without an accepted outage", err)
 	}
 }
+
+func TestReadAllNotifications(t *testing.T) {
+	a := testApp(t)
+	ctx := context.Background()
+	user, admin := account(t, a, "user"), account(t, a, "admin")
+	for _, who := range []identity{user, admin} {
+		_, err := a.db.Pool.Exec(ctx, `INSERT INTO notifications(user_id,event_key,kind,severity) SELECT $1,i::text,CASE WHEN i=1 THEN 'management' ELSE 'test' END,'info' FROM generate_series(1,105) i`, who.user.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func(who identity, want int) {
+		t.Helper()
+		r := request(a, "GET", "/api/notifications/unread-count", who, "")
+		requireStatus(t, r, 200)
+		var v struct{ Count int }
+		if err := json.Unmarshal(r.Body.Bytes(), &v); err != nil || v.Count != want {
+			t.Fatalf("wanted %d unread, got %s", want, r.Body.String())
+		}
+	}
+	bad := user
+	bad.csrf = ""
+	requireStatus(t, request(a, "POST", "/api/notifications/read-all", bad, ""), 403)
+	count(user, 104)
+	for range 2 {
+		requireStatus(t, request(a, "POST", "/api/notifications/read-all", user, ""), 204)
+	}
+	count(user, 0)
+	count(admin, 105)
+	var hidden int
+	if err := a.db.Pool.QueryRow(ctx, "SELECT count(*) FROM notifications WHERE user_id=$1 AND read_at IS NULL", user.user.ID).Scan(&hidden); err != nil || hidden != 1 {
+		t.Fatal("wrong role scope", hidden, err)
+	}
+	requireStatus(t, request(a, "POST", "/api/notifications/read-all", admin, ""), 204)
+	count(admin, 0)
+}

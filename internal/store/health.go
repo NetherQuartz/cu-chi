@@ -171,8 +171,21 @@ type Notification struct {
 	ReadAt     *time.Time `json:"read_at"`
 }
 
+const visibleNotice = `n.user_id=$1 AND ($2 OR n.kind NOT IN ('management','job_failed'))`
+
+func (s *Store) UnreadCount(ctx context.Context, u User) (int, error) {
+	var count int
+	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM notifications n WHERE `+visibleNotice+` AND n.read_at IS NULL`, u.ID, u.Role == "admin").Scan(&count)
+	return count, err
+}
+
+func (s *Store) ReadAllNotifications(ctx context.Context, u User) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE notifications n SET read_at=now() WHERE `+visibleNotice+` AND n.read_at IS NULL`, u.ID, u.Role == "admin")
+	return err
+}
+
 func (s *Store) Inbox(ctx context.Context, u User) ([]Notification, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT n.id::text,n.kind,n.severity,COALESCE(s.display_name,g.name,''),n.created_at,n.read_at,COALESCE(n.gateway_id::text,''),n.actor_names,n.operation FROM notifications n LEFT JOIN servers s ON s.id=n.server_id LEFT JOIN gateways g ON g.id=n.gateway_id WHERE n.user_id=$1 AND ($2 OR n.kind NOT IN ('management','job_failed')) ORDER BY n.created_at DESC LIMIT 100`, u.ID, u.Role == "admin")
+	rows, err := s.Pool.Query(ctx, `SELECT n.id::text,n.kind,n.severity,COALESCE(s.display_name,g.name,''),n.created_at,n.read_at,COALESCE(n.gateway_id::text,''),n.actor_names,n.operation FROM notifications n LEFT JOIN servers s ON s.id=n.server_id LEFT JOIN gateways g ON g.id=n.gateway_id WHERE `+visibleNotice+` ORDER BY n.created_at DESC LIMIT 100`, u.ID, u.Role == "admin")
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +201,7 @@ func (s *Store) Inbox(ctx context.Context, u User) ([]Notification, error) {
 	return out, rows.Err()
 }
 func (s *Store) ReadNotification(ctx context.Context, u User, id string) error {
-	r, err := s.Pool.Exec(ctx, `UPDATE notifications SET read_at=COALESCE(read_at,now()) WHERE id=$1 AND user_id=$2`, id, u.ID)
+	r, err := s.Pool.Exec(ctx, `UPDATE notifications n SET read_at=COALESCE(read_at,now()) WHERE `+visibleNotice+` AND id=$3`, u.ID, u.Role == "admin", id)
 	if err == nil && r.RowsAffected() != 1 {
 		return ErrNotFound
 	}

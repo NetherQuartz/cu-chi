@@ -18,9 +18,24 @@ function maintenanceButton(server){
  const b=node('button','button secondary',active?'Завершить обслуживание':'Обслуживание на час');
  b.addEventListener('click',async()=>{b.disabled=true;try{await api(`/api/admin/servers/${server.id}/maintenance`,{method:'POST',body:JSON.stringify({minutes:active?0:60})});await loadServers();}catch(e){notify(e.message);b.disabled=false;}});return b;
 }
-async function updateNoticeCount(){try{const items=await api('/api/notifications');const count=items.filter(x=>!x.read_at).length;$('#notice-count').textContent=count||'';$('#notice-count').hidden=count===0;return items;}catch{return [];}}
+async function updateNoticeCount(){
+ const {count}=await api('/api/notifications/unread-count');
+ $('#notice-count').textContent=count||'';
+ $('#notice-count').hidden=count===0;
+ $('#read-all-notices').hidden=count===0;
+}
+$('#read-all-notices').addEventListener('click',async event=>{
+ const button=event.currentTarget;
+ button.disabled=true;
+ try{
+  await api('/api/notifications/read-all',{method:'POST'});
+  await loadNotifications();
+ }catch(error){notify(error.message);}
+ finally{button.disabled=false;}
+});
 async function loadNotifications(){
- const items=await updateNoticeCount(),box=$('#notifications');box.replaceChildren();
+ const [items]=await Promise.all([api('/api/notifications'),updateNoticeCount()]);
+ const box=$('#notifications');box.replaceChildren();
  if(!items.length)box.append(node('div','empty-state','Уведомлений пока нет'));
  for(const n of items){const card=node('article',`server-card notice-card ${n.read_at?'':'unread'}`);const top=node('div','card-top');top.append(node('h2','',n.operation==='migration_cleanup'?'Ожидается отзыв старых ключей':noticeTitles[n.kind]||'Уведомление'),node('span',`badge ${n.severity==='critical'?'critical':''}`,{critical:'Критично',warning:'Внимание',info:'Информация'}[n.severity]));card.append(top,node('p','',n.operation==='migration_cleanup'?'Старый сервер не подтвердил удаление ключей. Это не мешает выпуску профилей на новом сервере; старые ключи пока считаются неотозванными.':noticeText[n.kind]||''));if(n.actor_names)card.append(node('p','small muted',`Запросили изменение: ${n.actor_names}`));if(n.server_name)card.append(node('p','small muted',n.server_name));card.append(node('p','small muted',dateLabel(n.created_at)));const controls=node('div','card-actions');const open=node('button','button secondary',n.gateway_id?'Открыть шлюзы':['management','job_failed'].includes(n.kind)?'Открыть серверы':'Открыть устройства');open.addEventListener('click',()=>changeView(n.gateway_id?'gateways':['management','job_failed'].includes(n.kind)?'servers':'devices'));controls.append(open);if(!n.read_at){const read=node('button','button secondary','Прочитано');read.addEventListener('click',async()=>{try{await api(`/api/notifications/${n.id}/read`,{method:'POST'});await loadNotifications();}catch(e){notify(e.message);}});controls.append(read);}card.append(controls);box.append(card);}
  const config=await api('/api/push');pushPublicKey=config.public_key;
@@ -64,5 +79,5 @@ $('#test-push').addEventListener('click',async()=>{try{const reg=await getPushRe
 $('#push-preferences').addEventListener('submit',async e=>{e.preventDefault();const p={};for(const key of ['outages','recovery','reminders','operations'])p[key]=e.target.elements[key].checked;try{await api('/api/push/preferences',{method:'PUT',body:JSON.stringify(p)});notify('Настройки уведомлений сохранены');}catch(err){notify(err.message);}});
 $('#preview-reminders').addEventListener('click',async()=>{try{const users=await api('/api/admin/reminders');reminderRequestID=crypto.randomUUID();$('#reminder-audience').textContent=users.length?users.map(u=>u.username).join(', '):'Все действующие профили используют основной сервер.';$('#send-reminders').hidden=!users.length;$('#send-reminders').textContent=`Напомнить пользователям (${users.length})`;}catch(e){notify(e.message);}});
 $('#send-reminders').addEventListener('click',async()=>{const b=$('#send-reminders');if(!reminderRequestID)return;b.disabled=true;$('#preview-reminders').disabled=true;try{const result=await api('/api/admin/reminders',{method:'POST',body:JSON.stringify({request_id:reminderRequestID})});reminderRequestID='';notify(`Создано напоминаний: ${result.created}.`);b.hidden=true;await loadNotifications();}catch(e){notify(e.message);}finally{b.disabled=false;$('#preview-reminders').disabled=false;}});
-setInterval(()=>{if(state.me&&!document.hidden)updateNoticeCount();},60000);
+setInterval(()=>{if(state.me&&!document.hidden)updateNoticeCount().catch(()=>{});},60000);
 loadCountries().catch(()=>{}).finally(()=>start());

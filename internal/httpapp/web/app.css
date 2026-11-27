@@ -88,3 +88,8 @@
 #egress-warp-help a { text-decoration: underline; }
 #egress-dialog form > p, #egress-warp-help { margin-top: 12px; }
 #egress-warp-help input { min-height: 0; width: 18px; height: 18px; vertical-align: middle; }
+
+.device-list-options,.device-list-options label{display:flex;align-items:center;gap:.5rem}
+.device-list-options{flex-wrap:wrap;justify-content:flex-end;column-gap:1rem}
+.device-list-options label{margin:0;min-height:36px;cursor:pointer}
+.device-list-options input{width:18px;height:18px;margin:0;accent-color:var(--green)}

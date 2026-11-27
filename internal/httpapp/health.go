@@ -43,6 +43,21 @@ func (a *App) healthRoutes(mux *http.ServeMux) {
 		}
 		jsonResponse(w, 200, v)
 	}))
+	mux.HandleFunc("GET /api/notifications/unread-count", a.auth(false, func(w http.ResponseWriter, r *http.Request, s store.Session) {
+		count, err := a.db.UnreadCount(r.Context(), s.User)
+		if err != nil {
+			a.failure(w, err)
+			return
+		}
+		jsonResponse(w, 200, map[string]int{"count": count})
+	}))
+	mux.HandleFunc("POST /api/notifications/read-all", a.auth(false, func(w http.ResponseWriter, r *http.Request, s store.Session) {
+		if err := a.db.ReadAllNotifications(r.Context(), s.User); err != nil {
+			a.failure(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
 	mux.HandleFunc("POST /api/notifications/{id}/read", a.auth(false, func(w http.ResponseWriter, r *http.Request, s store.Session) {
 		id := r.PathValue("id")
 		if !uuidRE.MatchString(id) {

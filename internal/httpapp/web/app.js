@@ -33,24 +33,36 @@ async function start() {
   $$('[data-admin]').forEach(el => { el.hidden = !admin; if (el.tagName === 'OPTION') el.disabled = !admin; });
   $('#username').textContent = state.me.user.username; $('#role').textContent = admin ? 'Администратор' : 'Пользователь';
   $('#avatar').textContent = state.me.user.username.slice(0, 1).toUpperCase(); $('#dev-badge').hidden = !state.me.dev_auth;
-  $('#device-list-title').textContent = admin ? 'Все устройства' : 'Ваши устройства';
-  $('.stat small').textContent = admin ? 'У всех пользователей' : 'В вашем кабинете';
+  $('#devices-mine').checked = true;
   await changeView(new URLSearchParams(location.search).get('view')||'devices',{history:'replace'});
-  if(state.view!=='devices')api('/api/devices').then(devices=>{state.devices=devices;$('#nav-count').textContent=devices.length;$('#nav-count').hidden=false;}).catch(()=>{$('#nav-count').hidden=true;});
+  if(state.view!=='devices')api('/api/devices').then(devices=>{state.devices=devices;$('#nav-count').textContent=visibleDevices().length;$('#nav-count').hidden=false;}).catch(()=>{$('#nav-count').hidden=true;});
   recordSessionActivity();
-  updateNoticeCount();
+  if(state.view!=='notifications')updateNoticeCount().catch(()=>{});
  } catch (error) { showLogin(); $('#login-error').textContent = error.message; }
  finally { $('#loading').hidden = true; }
 }
 async function loadDevices() {
  [state.devices,state.profiles,state.vpn,state.services,state.health,state.xray] = await Promise.all([api('/api/devices'),api('/api/profiles'),api('/api/vpn'),api('/api/services'),api('/api/health'),api('/api/xray')]);
+ renderDevices();
+}
+function visibleDevices(){
+ if(state.me.user.role==='admin' && $('#devices-mine').checked)return state.devices.filter(d=>d.user_id===state.me.user.id);
+ return state.devices;
+}
+$('#devices-mine').addEventListener('change',renderDevices);
+function renderDevices(){
+ $('#devices-mine').disabled=false;
+ const devices=visibleDevices();
+ const showAll=state.me.user.role==='admin' && !$('#devices-mine').checked;
+ $('#device-list-title').textContent=showAll?'Все устройства':'Ваши устройства';
+ $('.stat small').textContent=showAll?'У всех пользователей':'В вашем кабинете';
  const expandedCleanup=new Set($$('#devices .profile-cleanup[open]').map(el=>el.dataset.deviceId));
  const container = $('#devices'); container.replaceChildren();
- $('#device-empty').hidden = state.devices.length > 0;
- $('#device-count').textContent = state.devices.length; $('#nav-count').textContent = state.devices.length; $('#nav-count').hidden=false;
- $('#platform-count').textContent = new Set(state.devices.map(d => d.platform)).size;
- $('#device-summary').textContent = `${state.devices.length} всего`;
- for (const device of state.devices) {
+ $('#device-empty').hidden = devices.length > 0;
+ $('#device-count').textContent = devices.length; $('#nav-count').textContent = devices.length; $('#nav-count').hidden=false;
+ $('#platform-count').textContent = new Set(devices.map(d => d.platform)).size;
+ $('#device-summary').textContent = `${devices.length} всего`;
+ for (const device of devices) {
   const card = node('article', 'device-card'); const top = node('div', 'card-top');
   const icon = node('span', 'platform-icon'); icon.setAttribute('aria-hidden', 'true'); icon.append(node('span', `os-logo os-${Object.hasOwn(platforms,device.platform)?device.platform:'gateway'}`));
   const remove = node('button', 'icon-button', '×'); remove.setAttribute('aria-label', `Удалить ${device.name}`);
